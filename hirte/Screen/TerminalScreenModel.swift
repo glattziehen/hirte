@@ -355,7 +355,7 @@ final class TerminalScreenModel {
         renderNow()
     }
 
-    /// Whether a long-press drag goes to the program instead of selecting here. Claude Code's
+    /// Whether a selecting hold's drag goes to the program instead of selecting here. Claude Code's
     /// fullscreen renderer keeps the conversation to itself, so a selection of ours can't reach
     /// beyond the cells in view; it selects, scrolls at the edges and copies by itself (seen in
     /// 2.1.319). Other mouse-using programs keep our selection: many do nothing with a drag, or
