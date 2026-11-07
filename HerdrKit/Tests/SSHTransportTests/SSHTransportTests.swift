@@ -11,6 +11,14 @@ import Testing
     #expect(normalizedOpenSSHPublicKey(line) == "\(parts[0]) \(parts[1])")
 }
 
+@Test func aRejectionNamesWhatWasRejected() throws {
+    let key = try #require(SSHCredential.key(.p256(P256.Signing.PrivateKey())).rejected(username: "me").errorDescription)
+    #expect(key.contains("key for me"))
+    let password = try #require(SSHCredential.password("correct horse").rejected(username: "me").errorDescription)
+    #expect(password.contains("password for me"))
+    #expect(!password.contains("correct horse"))
+}
+
 @Test func knownHostsNames() {
     #expect(SSHTarget(host: "box", username: "me").knownHostsName == "box")
     #expect(SSHTarget(host: "box", port: 2222, username: "me").knownHostsName == "[box]:2222")
@@ -144,7 +152,7 @@ func logsInToSSHD() async throws {
     for (name, key) in keys {
         do {
             let connection = try await SSHConnection.connect(
-                to: target, key: key, knownHosts: InMemoryKnownHosts(), onUnknownHost: { _ in true })
+                to: target, credential: .key(key), knownHosts: InMemoryKnownHosts(), onUnknownHost: { _ in true })
             let output = try await connection.run("echo hello")
             #expect(output.trimmingCharacters(in: .whitespacesAndNewlines) == "hello", "\(name)")
             await connection.close()
@@ -176,7 +184,7 @@ func securityKeyErrorReachesTheCaller() async throws {
     let target = SSHTarget(host: "127.0.0.1", port: sshd.port, username: NSUserName())
     await #expect(throws: TappedCancel.self) {
         _ = try await SSHConnection.connect(
-            to: target, key: .securityKey(failing), knownHosts: InMemoryKnownHosts(), onUnknownHost: { _ in true })
+            to: target, credential: .key(.securityKey(failing)), knownHosts: InMemoryKnownHosts(), onUnknownHost: { _ in true })
     }
 }
 #endif
