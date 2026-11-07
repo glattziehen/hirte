@@ -105,6 +105,34 @@ private func bytes(_ s: String) -> Data { Data(s.utf8) }
     #expect(vt.selectedText() == nil)
 }
 
+@Test func selectionKeepsItsStartWhenDraggingUpThroughHistory() throws {
+    let vt = try VirtualTerminal(cols: 10, rows: 3)
+    for i in 1...10 { vt.write(bytes("line \(i)\r\n")) }
+    vt.select(from: (0, 1), to: (0, 1))  // the "l" of "line 10"
+    vt.scroll(by: -4)
+    #expect(vt.frame().text.contains("line 5"))
+    vt.extendSelection(to: (0, 0))  // the "l" of "line 5": the same row number showed "line 9" before
+    #expect(vt.selectedText() == "line 5\nline 6\nline 7\nline 8\nline 9\nl")
+    #expect(vt.frame().selection == [0...9, 0...9, 0...9])
+}
+
+@Test func selectionKeepsItsStartWhenDraggingDownThroughHistory() throws {
+    let vt = try VirtualTerminal(cols: 10, rows: 3)
+    for i in 1...10 { vt.write(bytes("line \(i)\r\n")) }
+    vt.scroll(by: -6)
+    vt.select(from: (5, 0), to: (5, 0))  // the "3" of "line 3"
+    vt.scroll(by: 2)
+    vt.extendSelection(to: (5, 2))  // the "7" of "line 7"
+    #expect(vt.selectedText() == "3\nline 4\nline 5\nline 6\nline 7")
+}
+
+@Test func extendingWithoutASelectionDoesNothing() throws {
+    let vt = try VirtualTerminal(cols: 10, rows: 3)
+    vt.write(bytes("hello"))
+    vt.extendSelection(to: (2, 0))
+    #expect(vt.selectedText() == nil)
+}
+
 @Test func framesReportOnlyChangedLines() throws {
     let vt = try VirtualTerminal(cols: 20, rows: 5)
     vt.write(bytes("one\r\ntwo\r\nthree"))
@@ -125,6 +153,44 @@ private func bytes(_ s: String) -> Data { Data(s.utf8) }
     vt.write(bytes("\u{1b}[10;1Hchanged"))
     let incremental = clock.measure { _ = vt.frame() }
     print("frame 160x50: full \(full), one changed line \(incremental)")
+}
+
+/// The bytes that made Claude Code 2.1.319's fullscreen renderer select a word, drag, scroll at
+/// the edge and copy, tried against the real thing.
+@Test func mouseDragsSelectByWordThenMoveAndRelease() throws {
+    let vt = try VirtualTerminal(cols: 80, rows: 24)
+    #expect(!vt.tracksMouseDrags)
+    #expect(vt.mouseDrag(.press, column: 10, row: 5).isEmpty)
+    vt.write(bytes("\u{1b}[?1049h\u{1b}[?1000h\u{1b}[?1002h\u{1b}[?1003h\u{1b}[?1006h"))
+    #expect(vt.tracksMouseDrags)
+    #expect(vt.mouseDrag(.press, column: 10, row: 5) == bytes("\u{1b}[<0;11;6M\u{1b}[<0;11;6m\u{1b}[<0;11;6M"))
+    #expect(vt.mouseDrag(.move, column: 10, row: 0) == bytes("\u{1b}[<32;11;1M"))
+    #expect(vt.mouseDrag(.release, column: 10, row: 0) == bytes("\u{1b}[<0;11;1m"))
+}
+
+@Test func clicksAloneAreNotDrags() throws {
+    let vt = try VirtualTerminal(cols: 80, rows: 24)
+    vt.write(bytes("\u{1b}[?1000h\u{1b}[?1006h"))
+    #expect(vt.isMouseTracking)
+    #expect(!vt.tracksMouseDrags)
+}
+
+@Test func clipboardWritesOnlyWhileAllowedAndOnlyOnce() throws {
+    let vt = try VirtualTerminal(cols: 20, rows: 3)
+    let copyHello = bytes("\u{1b}]52;c;aGVsbG8=\u{7}")
+    vt.write(copyHello)
+    #expect(vt.takeClipboardWrite() == nil)
+
+    vt.clipboardWritesAllowedUntil = ContinuousClock.now.advanced(by: .seconds(5))
+    vt.write(copyHello)
+    #expect(vt.takeClipboardWrite() == "hello")
+    #expect(vt.takeClipboardWrite() == nil)
+    vt.write(copyHello)
+    #expect(vt.takeClipboardWrite() == nil)
+
+    vt.clipboardWritesAllowedUntil = ContinuousClock.now.advanced(by: .seconds(-1))
+    vt.write(copyHello)
+    #expect(vt.takeClipboardWrite() == nil)
 }
 
 @Test func clicksOnlyReachMouseTrackingPrograms() throws {
