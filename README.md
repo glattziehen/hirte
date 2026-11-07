@@ -24,13 +24,13 @@ to jump in when they are.
 - **Everything at a glance**: terminals grouped by herdr spaces and tabs, agents under the shell that
   started them, progress, and the ones that need you first
 - **A real terminal**, powered by [Ghostty](https://ghostty.org)'s libghostty-vt: key bar, hardware
-  keyboards, selection, links, scrollback and pinch to zoom
+  keyboards, arrow keys by holding and dragging, links, scrollback and pinch to zoom
 - **Answer in one tap**: Yes, No, Return or Esc for a blocked agent
 - **Keys in the Secure Enclave**, optionally behind Face ID; host keys checked on every connect
 - **Themes**: separate light and dark terminal themes, and a choice of fonts
 
-Unfolded on the iPhone Duo, the terminal list and a terminal sit side by side. It works on every
-iPhone with iOS 27.1 or later.
+On the iPad and the unfolded iPhone Duo, the terminal list and a terminal sit side by side. It
+works on every iPhone and iPad with iOS 26 or later.
 
 <p align="center">
   <picture>
