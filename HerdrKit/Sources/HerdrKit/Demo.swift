@@ -7,10 +7,10 @@ public final class DemoCore: ByteTransport {
     public let incoming: AsyncThrowingStream<Data, Error>
     private let engine: DemoEngine
 
-    public init() {
+    public init(scene: DemoScene = .standard) {
         let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
         incoming = stream
-        engine = DemoEngine(output: continuation)
+        engine = DemoEngine(output: continuation, scene: scene)
     }
 
     public func send(_ data: Data) async throws {
@@ -24,8 +24,8 @@ public final class DemoCore: ByteTransport {
 
 extension HerdrClient {
     /// Connects to an in-app `DemoCore`.
-    public static func connectDemo() async throws -> HerdrClient {
-        try await connect(over: DemoCore())
+    public static func connectDemo(scene: DemoScene = .standard) async throws -> HerdrClient {
+        try await connect(over: DemoCore(scene: scene))
     }
 }
 
@@ -37,16 +37,23 @@ private actor DemoEngine {
     private var framed = false
     private var closed = false
 
-    private var terminals = DemoScript.terminals()
-    private var roles = DemoScript.roles
+    private var terminals: [DemoTerminal]
+    private var roles: [String: DemoScript.Role]
+    private let layout: String
+    private let timeline: [DemoScript.Step]
     private var seq: UInt64 = 100
     private var nextChannel: UInt32 = 1
-    private var nextTerminal = 8
+    private var nextTerminal: Int
 
     private var eventChannels: Set<UInt32> = []
     private var views: [UInt32: View] = [:]
     private var tasks: [UInt32: Task<Void, Never>] = [:]
     private var clock: Task<Void, Never>?
+    #if DEBUG
+    /// Opt-in generic mouse TUI for continuous UI gestures; no real host or network involved.
+    private let scrollLabDelay = ProcessInfo.processInfo.environment["HIRTE_SCROLL_TUI_MS"].flatMap(Double.init)
+    private var scrollLabTrace: FileHandle?
+    #endif
 
     /// One attached viewer.
     private struct View {
@@ -54,10 +61,28 @@ private actor DemoEngine {
         /// Watches only, like herdr-core's `observe`: its typing and size don't count.
         var observe = false
         var line = ""
+        #if DEBUG
+        var scrollLabOffset = 500
+        var scrollLabSequence = 0
+        #endif
     }
 
-    init(output: AsyncThrowingStream<Data, Error>.Continuation) {
+    init(output: AsyncThrowingStream<Data, Error>.Continuation, scene: DemoScene) {
         self.output = output
+        switch scene {
+        case .standard:
+            terminals = DemoScript.terminals()
+            roles = DemoScript.roles
+            layout = DemoScript.layout
+            timeline = DemoScript.timeline
+        case .dense:
+            terminals = DemoDenseScript.terminals()
+            roles = DemoDenseScript.roles()
+            layout = DemoDenseScript.layout
+            timeline = []
+        }
+        // After the scene's own addresses: "t8" follows the standard scene's seven.
+        nextTerminal = terminals.compactMap { Int($0.address.dropFirst()) }.max().map { $0 + 1 } ?? 1
     }
 
     func shutdown() {
@@ -138,7 +163,7 @@ private actor DemoEngine {
 
         case "doc.get":
             let name = params["name"] as? String
-            let value = name == HerdrAppLayout.documentName ? DemoScript.layout : "null"
+            let value = name == HerdrAppLayout.documentName ? layout : "null"
             let version = name == HerdrAppLayout.documentName ? 1 : 0
             return (Data(#"{"value":\#(value),"version":\#(version)}"#.utf8), nil)
 
@@ -276,6 +301,16 @@ private actor DemoEngine {
 
     private func paint(_ channel: UInt32) {
         guard let view = views[channel], let role = roles[view.address] else { return }
+        #if DEBUG
+        if scrollLabDelay != nil, view.address == "t1" {
+            let url = URL.documentsDirectory.appendingPathComponent("scroll-tui.csv")
+            FileManager.default.createFile(atPath: url.path, contents: Data("time,event,sequence,delta,offset\n".utf8))
+            scrollLabTrace = try? FileHandle(forWritingTo: url)
+            try? scrollLabTrace?.seekToEnd()
+            write(channel, "\u{1b}[?1049h\u{1b}[?1000h\u{1b}[?1006h\u{1b}[?25l" + scrollLabPaint(channel, offset: 500))
+            return
+        }
+        #endif
         write(channel, DemoScript.clear + role.paint)
         if case .stream(_, let lines, let interval) = role {
             tasks[channel] = Task { [weak self] in
@@ -294,6 +329,32 @@ private actor DemoEngine {
     private func typed(_ data: Data, on channel: UInt32) {
         guard var view = views[channel], let role = roles[view.address] else { return }
         let text = String(decoding: data, as: UTF8.self)
+        #if DEBUG
+        if let delay = scrollLabDelay, view.address == "t1" {
+            var delta = 0
+            for report in text.split(separator: "M") {
+                if report.hasPrefix("\u{1b}[<64;") { delta -= 1 }
+                if report.hasPrefix("\u{1b}[<65;") { delta += 1 }
+            }
+            guard delta != 0 else { return }
+            view.scrollLabOffset += delta
+            view.scrollLabSequence += 1
+            views[channel] = view
+            let offset = view.scrollLabOffset, sequence = view.scrollLabSequence
+            scrollLabRecord("input", sequence: sequence, delta: delta, offset: offset)
+            let deadline = ProcessInfo.processInfo.systemUptime + delay / 1000
+            let previous = tasks[channel]
+            // Fixed response latency, preserving wire order without accumulating one RTT per wheel.
+            tasks[channel] = Task { [weak self] in
+                await previous?.value
+                let remaining = deadline - ProcessInfo.processInfo.systemUptime
+                if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+                guard !Task.isCancelled else { return }
+                await self?.scrollLabRespond(channel, sequence: sequence, offset: offset)
+            }
+            return
+        }
+        #endif
         switch role {
         case .stream:
             if text.contains("\u{03}") { write(channel, "^C\r\n" + DemoScript.dim("(this demo keeps running)") + "\r\n") }
@@ -332,6 +393,26 @@ private actor DemoEngine {
         }
         views[channel] = view
     }
+
+    #if DEBUG
+    private func scrollLabPaint(_ channel: UInt32, offset: Int) -> String {
+        let rows = terminals.first { $0.address == views[channel]?.address }?.rows ?? 24
+        return "\u{1b}[?2026h\u{1b}[H" + (0..<rows).map {
+            "\u{1b}[\($0 + 1);1Hitem \(offset + $0) ready 漢 e\u{301}\u{1b}[K"
+        }.joined() + "\u{1b}[?2026l"
+    }
+
+    private func scrollLabRespond(_ channel: UInt32, sequence: Int, offset: Int) {
+        guard views[channel] != nil else { return }
+        scrollLabRecord("response", sequence: sequence, delta: 0, offset: offset)
+        write(channel, scrollLabPaint(channel, offset: offset))
+    }
+
+    private func scrollLabRecord(_ event: String, sequence: Int, delta: Int, offset: Int) {
+        let row = "\(ProcessInfo.processInfo.systemUptime),\(event),\(sequence),\(delta),\(offset)\n"
+        try? scrollLabTrace?.write(contentsOf: Data(row.utf8))
+    }
+    #endif
 
     private func submit(_ line: String, role: DemoScript.Role, channel: UInt32, address: String) {
         switch role {
@@ -392,7 +473,7 @@ private actor DemoEngine {
         guard clock == nil else { return }
         clock = Task { [weak self] in
             var elapsed: Duration = .zero
-            var steps = DemoScript.timeline
+            var steps = await self?.timeline ?? []
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 elapsed += .seconds(1)

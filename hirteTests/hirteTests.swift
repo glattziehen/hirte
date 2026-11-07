@@ -74,6 +74,58 @@ struct AgeTests {
 }
 
 @MainActor
+struct TerminalLayoutTests {
+    @Test(.timeLimit(.minutes(1)))
+    func resizingTheViewUpdatesTheEmulatorAndRemoteTerminal() async throws {
+        let session = HostSession(host: .makeDemo(), knownHosts: InMemoryKnownHosts())
+        session.start(keys: KeyLibrary(store: KeyStore(storage: InMemoryKeyStorage())))
+        defer { session.stop() }
+        try await waitUntil { session.state == .connected }
+
+        let model = TerminalScreenModel(theme: TerminalTheme.find(TerminalTheme.defaultDark, dark: true))
+        defer { model.stop() }
+        let canvas = TerminalCanvasView(frame: CGRect(x: 0, y: 0, width: 1024, height: 768))
+        canvas.model = model
+        canvas.onGridSize = { cols, rows in
+            if case .attaching = model.phase {
+                model.start(session: session, address: "t5", cols: cols, rows: rows)
+            } else {
+                model.viewSizeChanged(cols: cols, rows: rows)
+            }
+        }
+        canvas.setNeedsLayout()
+        canvas.layoutIfNeeded()
+        try await waitUntil { model.phase == .live && model.frame.cols > 0 }
+        let wideColumns = model.frame.cols
+
+        for size in [CGSize(width: 360, height: 600), CGSize(width: 1280, height: 720)] {
+            let previousColumns = model.frame.cols
+            canvas.frame.size = size
+            canvas.setNeedsLayout()
+            canvas.layoutIfNeeded()
+            try await waitUntil {
+                model.frame.cols != previousColumns
+                    && session.terminal("t5")?.cols == model.frame.cols
+                    && session.terminal("t5")?.rows == model.frame.rows
+            }
+            if size.width < 1024 {
+                #expect(model.frame.cols < wideColumns)
+            } else {
+                #expect(model.frame.cols > wideColumns)
+            }
+        }
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(condition())
+    }
+}
+
+@MainActor
 struct ArrowStickTests {
     private func key(_ dx: CGFloat, _ dy: CGFloat, current: TerminalKey? = nil) -> TerminalKey? {
         ArrowStick.reading(dx: dx, dy: dy, current: current)?.key

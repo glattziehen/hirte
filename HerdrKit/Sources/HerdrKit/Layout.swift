@@ -153,6 +153,14 @@ public struct TerminalSection: Hashable, Sendable, Identifiable {
         }
     }
 
+    /// Where a space works: its first terminal's folder, else the one herdr-app recorded. Its header
+    /// shows this and new terminals start here. Other sections have unrelated rows.
+    public var workingFolder: String? {
+        guard case .space = kind else { return nil }
+        if let first = rows.first?.terminal { return TerminalContext(terminal: first).directory ?? first.cwd }
+        return subtitle?.isEmpty == false ? subtitle : nil
+    }
+
     /// Terminals in this section waiting for a person.
     public var needsYou: Int {
         rows.filter { $0.terminal.isLive && ["blocked", "error"].contains($0.terminal.status?.state ?? "") }.count

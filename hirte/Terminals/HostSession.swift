@@ -15,7 +15,11 @@ final class HostSession {
     }
 
     let host: Host
-    private(set) var state: State = .idle
+    private(set) var state: State = .idle {
+        didSet {
+            if state != .connected { FollowController.shared.disconnected(self) }
+        }
+    }
     private(set) var snapshot: TerminalSnapshot?
     private(set) var machines: [MachineView] = []
     /// herdr-app's spaces and tabs on this machine, when herdr-app is used there.
@@ -190,7 +194,12 @@ final class HostSession {
     private func connectOnce(keys: KeyLibrary) async throws {
         if host.isDemo {
             state = .connecting("Starting the demo…")
-            let client = try await HerdrClient.connectDemo()
+            var scene = DemoScene.standard
+            #if DEBUG
+            // `-hirte.demo.dense YES` (design checks): many agents and families, standing still.
+            if UserDefaults.standard.bool(forKey: "hirte.demo.dense") { scene = .dense }
+            #endif
+            let client = try await HerdrClient.connectDemo(scene: scene)
             self.client = client
             coreName = "Demo"
             coreVersion = await client.hello?.version
@@ -232,6 +241,7 @@ final class HostSession {
         layout = try? await client.herdrAppLayout()
         lastHeard = .now
         state = .connected
+        FollowController.shared.received(self)
         markLookedAt()
 
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -254,7 +264,9 @@ final class HostSession {
 
     private func apply(_ message: EventMessage) async {
         lastHeard = .now
-        snapshot?.apply(message)
+        if snapshot?.apply(message) == true {
+            FollowController.shared.received(self, message: message)
+        }
         markLookedAt()
         guard let client else { return }
         switch message {
@@ -360,6 +372,7 @@ final class SessionStore {
 
     func session(for host: Host) -> HostSession {
         if let session = sessions[host.id], session.host == host { return session }
+        if let old = sessions[host.id] { FollowController.shared.sessionRemoved(old) }
         sessions[host.id]?.stop()
         let session = HostSession(host: host)
         sessions[host.id] = session
@@ -372,7 +385,10 @@ final class SessionStore {
     var ids: [UUID] { Array(sessions.keys) }
 
     func remove(_ hostID: UUID) {
-        sessions.removeValue(forKey: hostID)?.stop()
+        if let old = sessions.removeValue(forKey: hostID) {
+            FollowController.shared.sessionRemoved(old)
+            old.stop()
+        }
     }
 
     /// iOS suspends the app soon after it leaves the screen; close lines cleanly.

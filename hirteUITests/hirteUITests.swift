@@ -39,7 +39,7 @@ final class DemoTourTests: XCTestCase {
         // A shell with the keyboard and key bar up.
         open(app, "t5")
         sleep(1)
-        let keyboard = app.buttons["Show Keyboard"]
+        let keyboard = app.terminalAction("Show Keyboard")
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         keyboard.tap()
         sleep(1)
@@ -49,7 +49,7 @@ final class DemoTourTests: XCTestCase {
         app.typeText("git status\n")
         sleep(1)
         shot(app, "4-shell")
-        app.buttons["Hide Keyboard"].tap()
+        app.buttons["Hide keyboard"].firstMatch.tap()
         backIfStacked(app)
 
         open(app, "t2")
@@ -97,7 +97,7 @@ final class DemoTourTests: XCTestCase {
         // A real terminal: type, then pinch to zoom.
         open(app, "t5")
         pause(1)
-        app.buttons["Show Keyboard"].tap()
+        app.terminalAction("Show Keyboard").tap()
         pause(1)
         let hint = app.buttons["Continue"]
         if hint.waitForExistence(timeout: 2) { hint.tap() }
@@ -107,7 +107,7 @@ final class DemoTourTests: XCTestCase {
         }
         app.typeText("\n")
         pause(1.5)
-        app.buttons["Hide Keyboard"].tap()
+        app.buttons["Hide keyboard"].firstMatch.tap()
         pause(0.5)
         let screen = app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch
         screen.pinch(withScale: 2.2, velocity: 1.5)
@@ -152,7 +152,7 @@ final class DemoTourTests: XCTestCase {
         // A real terminal: type, then pinch to zoom.
         open(app, "t5")
         pause(1)
-        app.buttons["Show Keyboard"].tap()
+        app.terminalAction("Show Keyboard").tap()
         pause(1)
         let hint = app.buttons["Continue"]
         if hint.waitForExistence(timeout: 2) { hint.tap() }
@@ -160,7 +160,7 @@ final class DemoTourTests: XCTestCase {
         pause(0.5)
         app.typeText("\n")
         pause(2)
-        app.buttons["Hide Keyboard"].tap()
+        app.buttons["Hide keyboard"].firstMatch.tap()
         pause(0.5)
         let screen = app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch
         screen.pinch(withScale: 2.2, velocity: 1.5)
@@ -212,6 +212,49 @@ final class DemoTourTests: XCTestCase {
         try? now.write(to: URL(fileURLWithPath: folder).appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
 
+    /// The same terminal stays usable as its available area and keyboard change.
+    @MainActor
+    func testAdaptiveTerminalLayout() throws {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments += ["-hirte.demo", "YES", "-appearance", "system", "-terminal.watch", "NO"]
+        app.launch()
+        XCTAssertTrue(blockedRow(app).waitForExistence(timeout: 10))
+        open(app, "t5")
+        let screen = app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch
+        XCTAssertTrue(screen.waitForExistence(timeout: 5))
+        sleep(1)
+        shot(app, "adaptive-portrait")
+
+        screen.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let hint = app.buttons["Continue"]
+        if hint.waitForExistence(timeout: 2) { hint.tap() }
+        app.typeText("echo adaptive-window\n")
+        shot(app, "adaptive-keyboard")
+        // The accessory stays visible when the navigation toolbar moves into its overflow menu.
+        app.buttons["Hide keyboard"].firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+
+        let portraitSize = screen.frame.size
+        let windowSize = app.windows.firstMatch.frame.size
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(screen.waitForExistence(timeout: 5))
+        sleep(1)
+        // A floating iPad window may keep its size when the device rotates.
+        if app.windows.firstMatch.frame.size != windowSize {
+            XCTAssertNotEqual(screen.frame.size, portraitSize, "the terminal follows the available area")
+        }
+        shot(app, "adaptive-landscape")
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCUIDevice.shared.orientation = .portraitUpsideDown
+            XCTAssertTrue(screen.waitForExistence(timeout: 5))
+            sleep(1)
+            shot(app, "adaptive-upside-down")
+        }
+    }
+
     /// Pinch to zoom: the font changes once per gesture and the screen comes back crisp.
     @MainActor
     func testPinchZoom() throws {
@@ -219,6 +262,9 @@ final class DemoTourTests: XCTestCase {
         app.launch()
         startDemo(app)
         open(app, "t5")
+        // These checks start as a viewer even if an earlier run remembered Watch Only.
+        let initiallyWatching = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Watching'")).firstMatch
+        if initiallyWatching.waitForExistence(timeout: 1) { app.terminalAction("Take Over").tap() }
         sleep(2)
         shot(app, "zoom-0-start")
         let screen = app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch
@@ -239,6 +285,9 @@ final class DemoTourTests: XCTestCase {
         app.launch()
         startDemo(app)
         open(app, "t5")
+        // These checks start as a viewer even if an earlier run remembered Watch Only.
+        let initiallyWatching = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Watching'")).firstMatch
+        if initiallyWatching.waitForExistence(timeout: 1) { app.terminalAction("Take Over").tap() }
         let watch = app.buttons["Watch Only"]
         XCTAssertTrue(watch.waitForExistence(timeout: 5))
         watch.tap()
@@ -250,7 +299,8 @@ final class DemoTourTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch.tap()
         let hint = app.buttons["Continue"]
         if hint.waitForExistence(timeout: 2) { hint.tap() }
-        XCTAssertTrue(app.buttons["Hide Keyboard"].waitForExistence(timeout: 5), "tapping brings up the keyboard")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "tapping brings up the keyboard")
+        app.assertTerminalAction("Hide Keyboard", "and offers to hide it")
         XCTAssertFalse(banner.exists, "and takes over")
         sleep(1)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Another viewer'")).firstMatch.exists,
@@ -259,7 +309,8 @@ final class DemoTourTests: XCTestCase {
         shot(app, "watch-1-taken-over")
         // Watching again puts the keyboard away.
         app.buttons["Watch Only"].tap()
-        XCTAssertTrue(app.buttons["Show Keyboard"].waitForExistence(timeout: 5), "watching hides the keyboard")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "watching hides the keyboard")
+        app.assertTerminalAction("Show Keyboard", "and offers it again")
         XCTAssertTrue(banner.waitForExistence(timeout: 5))
         back(app)
         // Remembered: the next terminal opens watching. Switch it off again for the other tests.
@@ -298,7 +349,9 @@ final class DemoTourTests: XCTestCase {
         let watching = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Watching'")).firstMatch
         XCTAssertTrue(watching.waitForExistence(timeout: 5), "the terminal opens watching")
         shot(app, "preview-1-watch")
-        back(app)
+        backIfStacked(app)
+        // Next to the lists it's still selected, and selecting it again wouldn't open it anew.
+        if app.buttons["Hide Sidebar"].exists { open(app, "t4") }
         open(app, "t5")
         XCTAssertTrue(app.buttons["Watch Only"].waitForExistence(timeout: 5), "opening it normally doesn't watch")
         XCTAssertFalse(watching.exists)
@@ -355,19 +408,24 @@ final class DemoTourTests: XCTestCase {
         XCTAssertLessThan(blockedRow(app).frame.minY, upgrade.frame.minY, "what needs you comes first")
         shot(app, "status-0-agents")
 
-        // The dot explains itself.
-        let dot = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Needs you, since'")).firstMatch
-        XCTAssertTrue(dot.label.contains("12 minutes"), "with how long it has waited: \(dot.label)")
-        XCTAssertTrue(app.staticTexts["12m"].exists, "shown short in the row")
-        dot.tap()
+        // The time explains the state.
+        let time = app.buttons["Needs you"].firstMatch
+        XCTAssertTrue(time.exists, "the time is the state's button")
+        XCTAssertGreaterThanOrEqual(time.frame.height, 44 - 1e-6)
+        XCTAssertEqual(time.value as? String, "12m", "shown short in the row")
+        time.tap()
         XCTAssertTrue(app.staticTexts["Needs you: waiting for your answer."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Since' AND label CONTAINS '12 minutes'")).firstMatch.exists,
+                      "with how long it has waited")
         shot(app, "status-1-legend")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).tap()
 
         // Looking at it reads it: it moves to Idle, which starts collapsed.
         open(app, "t6")
         sleep(2)
-        back(app)
+        backIfStacked(app)
+        // Next to the lists it stays open, and held under Done, until another one is opened.
+        if app.buttons["Hide Sidebar"].exists { open(app, "t3") }
         let idle = section("idle")
         XCTAssertTrue(idle.waitForExistence(timeout: 5), "an Idle section once it's read")
         if !upgrade.waitForExistence(timeout: 2) { idle.tap() }
@@ -417,7 +475,9 @@ final class DemoTourTests: XCTestCase {
     @MainActor
     func testViewsKeepScrollPosition() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
+        // No sections folded away by an earlier test: the last terminal is what it scrolls to.
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
+                                "-terminals.collapsed", ""]
         app.launch()
         startDemo(app)
         app.buttons["Terminals"].tap()
@@ -691,7 +751,8 @@ final class DemoTourTests: XCTestCase {
 
     @MainActor
     private func shot(_ app: XCUIApplication, _ name: String) {
-        let screenshot = app.screenshot()
+        // Include the display context for floating iPad windows and rotated scenes.
+        let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways

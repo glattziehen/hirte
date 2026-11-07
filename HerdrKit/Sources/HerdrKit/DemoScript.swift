@@ -8,12 +8,30 @@ enum DemoScript {
     static let shopAPI = home + "/projects/shop-api"
     static let infra = home + "/projects/infra"
 
-    static let now = UInt64(Date().timeIntervalSince1970 * 1000)
+    static let now: UInt64 = {
+        #if DEBUG
+        // UI tests of what outlives a relaunch: the demo's terminals are otherwise new in each run.
+        if let fixed = ProcessInfo.processInfo.environment["HIRTE_DEMO_EPOCH_MS"].flatMap(UInt64.init) { return fixed }
+        #endif
+        return UInt64(Date().timeIntervalSince1970 * 1000)
+    }()
 
     private static func ago(minutes: UInt64) -> UInt64 { now - minutes * 60_000 }
 
     /// herdr's shared read state: the last turn someone looked at.
     private static func seen(_ turn: UInt64) -> [String: String] { [Terminal.seenLabel: String(turn)] }
+
+    /// Generic host metadata behind the same labels contract as real machines.
+    private static func context(_ turn: UInt64, created: UInt64, folder: String,
+                                agent: String, account: String, branch: String) -> [String: String] {
+        seen(turn).merging([
+            "context.created_ms": String(ago(minutes: created)),
+            "context.directory": folder,
+            "context.branch": branch,
+            "context.agent": agent,
+            "context.account": account,
+        ], uniquingKeysWith: { _, new in new })
+    }
 
     // MARK: Terminals
 
@@ -23,18 +41,18 @@ enum DemoScript {
                 address: "t1", argv: ["agent"], cwd: website, title: "agent",
                 status: .init(state: "working", app: "agent", title: "Adding a dark mode toggle",
                               msg: "Updating styles (12 of 20 files)", progress: 60),
-                labels: seen(2), foreground: .init(pid: 31_201, name: "agent", argv: ["agent"], cwd: website),
+                labels: context(2, created: 18, folder: website, agent: "codex", account: "Personal", branch: "feature/dark-mode"), foreground: .init(pid: 31_201, name: "agent", argv: ["agent"], cwd: website),
                 createdMs: ago(minutes: 18), turn: 2, statusMs: ago(minutes: 6)),
             DemoTerminal(
                 address: "t2", name: "tests", argv: ["npm", "test", "--", "--watch"], cwd: website,
                 status: .init(state: "working", app: "tests", title: "Running tests", msg: "31 of 48 passed", progress: 65),
-                labels: seen(0), foreground: .init(pid: 31_377, name: "node", argv: ["node", "vitest", "--watch"], cwd: website),
+                labels: context(0, created: 3, folder: website, agent: "claude-code", account: "Work", branch: "feature/dark-mode"), foreground: .init(pid: 31_377, name: "node", argv: ["node", "vitest", "--watch"], cwd: website),
                 createdMs: ago(minutes: 3), parent: "t1", statusMs: ago(minutes: 3)),
             DemoTerminal(
                 address: "t3", argv: ["agent"], cwd: shopAPI, title: "agent",
                 status: .init(state: "blocked", app: "agent", title: "Run the database migration?",
                               msg: "npm run migrate", kind: "permission"),
-                labels: seen(1), foreground: .init(pid: 30_822, name: "agent", argv: ["agent"], cwd: shopAPI),
+                labels: context(1, created: 41, folder: shopAPI, agent: "claude-code", account: "Work", branch: "feature/orders"), foreground: .init(pid: 30_822, name: "agent", argv: ["agent"], cwd: shopAPI),
                 createdMs: ago(minutes: 41), turn: 1, statusMs: ago(minutes: 12)),
             DemoTerminal(
                 address: "t4", name: "dev-server", argv: ["npm", "run", "dev"], cwd: website,
@@ -48,7 +66,7 @@ enum DemoScript {
                 address: "t6", argv: ["agent"], cwd: infra, title: "agent",
                 status: .init(state: "done", app: "agent", title: "Upgraded Postgres to 18", msg: "All checks green"),
                 // Finished a turn nobody has looked at yet.
-                labels: seen(2), foreground: .init(pid: 28_456, name: "agent", argv: ["agent"], cwd: infra),
+                labels: context(2, created: 130, folder: infra, agent: "codex", account: "Personal", branch: "main"), foreground: .init(pid: 28_456, name: "agent", argv: ["agent"], cwd: infra),
                 createdMs: ago(minutes: 130), turn: 3, statusMs: ago(minutes: 47)),
             DemoTerminal(
                 address: "t7", name: "nightly-backup", argv: ["./backup.sh"], cwd: infra, state: "finished",

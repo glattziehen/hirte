@@ -116,3 +116,30 @@ private actor Screen {
     #expect(after.cols == before.cols && after.rows == before.rows)
     #expect(!(await screen.text.contains("/Users/demo/projects/shop-api\r\n")))
 }
+
+@Test(.timeLimit(.minutes(1))) func denseDemoSceneIsDenseAndGeneric() async throws {
+    let client = try await HerdrClient.connectDemo(scene: .dense)
+    defer { Task { await client.close() } }
+
+    let list = try await client.listTerminals()
+    let agents = list.terminals.filter(AgentOverview.isAgent)
+    #expect(agents.count >= 12)
+    #expect(agents.filter { $0.status?.state == "blocked" }.count == 2)
+    let parents = Set(agents.compactMap(\.parent))
+    #expect(parents.count >= 3, "three families")
+    #expect(agents.contains { terminal in
+        terminal.parent.flatMap { parent in agents.first { $0.address == parent }?.parent } != nil
+    }, "one of them two levels deep")
+    #expect(agents.contains { TerminalContext(terminal: $0).branch?.count ?? 0 > 44 }, "a long branch")
+    #expect(agents.contains { TerminalContext(terminal: $0).directory?.contains("/worktrees/") == true })
+    let layout = try #require(try await client.herdrAppLayout())
+    let placed = TerminalGrouping.bySpace(list.terminals.filter(\.isLive), layout: layout)
+        .flatMap(\.rows).map(\.terminal.address)
+    #expect(Set(placed) == Set(list.terminals.filter(\.isLive).map(\.address)), "every live terminal has a place")
+}
+
+@Test(.timeLimit(.minutes(1))) func denseDemoSceneIsOptIn() async throws {
+    let client = try await HerdrClient.connectDemo()
+    defer { Task { await client.close() } }
+    #expect(try await client.listTerminals().terminals.count == 7)
+}
