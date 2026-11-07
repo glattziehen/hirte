@@ -74,6 +74,118 @@ struct AgeTests {
 }
 
 @MainActor
+struct ScrollGlideTests {
+    /// How far a glide goes, a frame at a time, until under half a point is left.
+    private func coasted(_ start: ScrollGlide, framesPerSecond: Double) -> (travel: Double, seconds: Double) {
+        var glide = start
+        var travel = 0.0
+        var frames = 0.0
+        while abs(glide.travelLeft) >= 0.5 {
+            travel += glide.advance(by: 1 / framesPerSecond)
+            frames += 1
+        }
+        return (travel, frames / framesPerSecond)
+    }
+
+    @Test func decelerationIsUIKits() {
+        #expect(abs(ScrollGlide.decelerationRate - Double(UIScrollView.DecelerationRate.normal.rawValue)) < 0.0001)
+        #expect(abs(ScrollGlide.settlingRate - Double(UIScrollView.DecelerationRate.fast.rawValue)) < 0.0001)
+    }
+
+    @Test func aFlickCoastsForAboutHalfASecondOfItsSpeed() {
+        let down = coasted(ScrollGlide(lift: 2000), framesPerSecond: 60).travel
+        #expect(down > 990)
+        #expect(down < 1000)
+        #expect(abs(coasted(ScrollGlide(lift: -2000), framesPerSecond: 60).travel + down) < 0.001)
+    }
+
+    @Test func theFrameRateChangesNothing() {
+        let slow = coasted(ScrollGlide(lift: 2000), framesPerSecond: 60).travel
+        let fast = coasted(ScrollGlide(lift: 2000), framesPerSecond: 120).travel
+        #expect(abs(slow - fast) < 1)
+    }
+
+    @Test func aboutASeventhOfTheSpeedIsLeftAfterASecond() {
+        var glide = ScrollGlide(lift: 2000)
+        _ = glide.advance(by: 1)
+        #expect(abs(glide.velocity - 270) < 1)
+    }
+
+    @Test func aFlickAddsToTheGlideItsTouchStopped() {
+        #expect(ScrollGlide(lift: 1000, interrupted: 800, heldFor: 0.1).velocity == 1800)
+        #expect(ScrollGlide(lift: -1000, interrupted: -800, heldFor: 0.1).velocity == -1800)
+    }
+
+    @Test func turningAroundOrHoldingStillStartsAfresh() {
+        #expect(ScrollGlide(lift: -1000, interrupted: 800, heldFor: 0.1).velocity == -1000)
+        #expect(ScrollGlide(lift: 1000, interrupted: 800, heldFor: ScrollGlide.carryTime + 0.1).velocity == 1000)
+    }
+
+    /// A small move stays where it was left, also when its touch stopped a glide.
+    @Test func aSlowLiftDoesNotGlide() {
+        for lift in [0.0, 50, -100, 299, -299] {
+            #expect(ScrollGlide(lift: lift).velocity == 0, "\(lift)")
+            #expect(ScrollGlide(lift: lift, interrupted: lift < 0 ? -2000 : 2000, heldFor: 0.1).velocity == 0, "\(lift)")
+        }
+    }
+
+    @Test func aFirmFlickGlidesInFull() {
+        for lift in [ScrollGlide.fullGlideSpeed, -ScrollGlide.fullGlideSpeed, 2000, -5000] {
+            #expect(ScrollGlide(lift: lift).velocity == lift, "\(lift)")
+        }
+    }
+
+    /// In between, a little more speed never means suddenly many more lines.
+    @Test func theGlideBuildsUpSmoothly() {
+        #expect(ScrollGlide(lift: 550).velocity == 275)
+        var last = 0.0
+        for lift in stride(from: 300.0, through: 800, by: 5) {
+            let velocity = ScrollGlide(lift: lift).velocity
+            #expect(velocity >= last, "\(lift)")
+            #expect(velocity - last <= 15, "\(lift)")
+            last = velocity
+        }
+    }
+
+    @Test func repeatedFlicksHaveALimit() {
+        #expect(ScrollGlide(lift: 10_000, interrupted: 10_000).velocity == ScrollGlide.maxSpeed)
+        #expect(ScrollGlide(lift: -10_000, interrupted: -10_000).velocity == -ScrollGlide.maxSpeed)
+    }
+
+    /// The text comes to rest on a line, whatever the speed and however far off one it starts.
+    @Test func aGlideLandsOnALine() {
+        for lift in [0.0, 50, -90, 700, 2000, -2000, 15_000] {
+            for offset in [0.0, 5, -7, 17, -17] {
+                var glide = ScrollGlide(lift: lift)
+                glide.land(onMultiplesOf: 18, from: offset)
+                let lines = (glide.travelLeft + offset) / 18
+                #expect(abs(lines - lines.rounded()) < 0.000001, "\(lift) from \(offset)")
+            }
+        }
+    }
+
+    @Test func landingBarelyChangesWhereAFlickGoes() {
+        let flick = ScrollGlide(lift: 2000)
+        var landing = flick
+        landing.land(onMultiplesOf: 18, from: 5)
+        #expect(abs(landing.travelLeft - flick.travelLeft) <= 9 + 5)
+        #expect(landing.velocity > 0)
+    }
+
+    /// After a slow lift the text finds its line quickly: a long slow crawl looks like lag.
+    @Test func aSlowLiftSettlesOnTheNearestLineQuickly() {
+        var back = ScrollGlide(lift: 0)
+        back.land(onMultiplesOf: 18, from: 8)
+        #expect(abs(back.travelLeft + 8) < 0.000001)
+        #expect(coasted(back, framesPerSecond: 60).seconds < 0.5)
+
+        var onward = ScrollGlide(lift: 0)
+        onward.land(onMultiplesOf: 18, from: 10)
+        #expect(abs(onward.travelLeft - 8) < 0.000001)
+    }
+}
+
+@MainActor
 struct ArrowStickTests {
     private func key(_ dx: CGFloat, _ dy: CGFloat, current: TerminalKey? = nil) -> TerminalKey? {
         ArrowStick.reading(dx: dx, dy: dy, current: current)?.key
