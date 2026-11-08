@@ -88,6 +88,18 @@ struct HostTests {
         try store.save(host, password: nil)
         #expect(try passwords.password(for: host.id) == "correct horse")
 
+        // It only goes to the server and user it was saved for.
+        var moved = host
+        moved.target.host = "other.local"
+        #expect(!store.hasPassword(for: moved))
+        #expect(throws: HostStoreError.self) { try store.save(moved, password: nil) }
+        #expect(store.hosts.first?.target.host == "mini.local")
+        let revision = store.passwordRevisions[host.id]
+        try store.save(moved, password: "for other")
+        #expect(store.hasPassword(for: moved))
+        #expect(store.passwordRevisions[host.id] != revision)
+        host = moved
+
         // Moving to a key forgets it, and so does deleting the machine.
         host.usesPassword = false
         try store.save(host, password: "ignored")

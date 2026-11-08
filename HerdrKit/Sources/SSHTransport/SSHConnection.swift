@@ -36,9 +36,15 @@ public enum SSHCredential: Sendable {
     fileprivate func authenticationMethod(username: String) -> SSHAuthenticationMethod {
         switch self {
         case .key(let key):
-            .custom(PublicKeyAuthentication(username: username, key: key.nioSSHKey))
+            .custom(SingleOfferAuthentication(
+                username: username, method: .publicKey,
+                offer: .privateKey(.init(privateKey: key.nioSSHKey)),
+                rejected: rejected(username: username)))
         case .password(let password):
-            .passwordBased(username: username, password: password)
+            .custom(SingleOfferAuthentication(
+                username: username, method: .password,
+                offer: .password(.init(password: password)),
+                rejected: rejected(username: username)))
         }
     }
 
@@ -81,8 +87,9 @@ public final class SSHConnection: @unchecked Sendable {
                 connectTimeout: timeout)
             return SSHConnection(client: client, target: target)
         } catch SSHClientError.allAuthenticationOptionsFailed {
-            // What a "no" from the server turns into: Citadel (0.12.1) asks its authentication
-            // method for one offer and fails by itself when asked for another.
+            // What a "no" from the server turns into: Citadel (0.12.1) asks a custom authentication
+            // method for one offer and fails by itself when asked for another. Should that change,
+            // SingleOfferAuthentication still never offers twice and fails with `rejected`.
             throw credential.rejected(username: target.username)
         }
     }
@@ -105,27 +112,38 @@ public final class SSHConnection: @unchecked Sendable {
     }
 }
 
-/// Offers one public key, once.
-final class PublicKeyAuthentication: NIOSSHClientUserAuthenticationDelegate, @unchecked Sendable {
+/// Makes one offer (a key or a password), once, and fails with `rejected` when asked again or when
+/// the server doesn't take that method. A wrong password must never be resent: servers lock
+/// accounts or ban addresses for that.
+final class SingleOfferAuthentication: NIOSSHClientUserAuthenticationDelegate, @unchecked Sendable {
     let username: String
-    let key: NIOSSHPrivateKey
+    let method: NIOSSHAvailableUserAuthenticationMethods
+    let offer: NIOSSHUserAuthenticationOffer.Offer
+    let rejected: SSHTransportError
     private var offered = false
 
-    init(username: String, key: NIOSSHPrivateKey) {
+    init(
+        username: String,
+        method: NIOSSHAvailableUserAuthenticationMethods,
+        offer: NIOSSHUserAuthenticationOffer.Offer,
+        rejected: SSHTransportError
+    ) {
         self.username = username
-        self.key = key
+        self.method = method
+        self.offer = offer
+        self.rejected = rejected
     }
 
     func nextAuthenticationType(
         availableMethods: NIOSSHAvailableUserAuthenticationMethods,
         nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
     ) {
-        guard !offered, availableMethods.contains(.publicKey) else {
-            nextChallengePromise.fail(SSHTransportError.authenticationFailed(username: username))
+        guard !offered, availableMethods.contains(method) else {
+            nextChallengePromise.fail(rejected)
             return
         }
         offered = true
         nextChallengePromise.succeed(NIOSSHUserAuthenticationOffer(
-            username: username, serviceName: "", offer: .privateKey(.init(privateKey: key))))
+            username: username, serviceName: "", offer: offer))
     }
 }

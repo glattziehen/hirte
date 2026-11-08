@@ -198,11 +198,24 @@ struct HostEditor: View {
     /// One typed here; a saved password is never shown or read into this.
     @State private var password = ""
     @State private var hasSavedPassword = false
+    /// Where the saved password was typed for: it isn't sent anywhere else.
+    @State private var savedTarget: SSHTarget?
     @State private var saveError: String?
 
+    /// The target as it will be saved.
+    private var editedTarget: SSHTarget {
+        var target = host.target
+        target.host = target.host.trimmingCharacters(in: .whitespaces)
+        target.username = target.username.trimmingCharacters(in: .whitespaces)
+        target.port = Int(port) ?? 22
+        return target
+    }
+
+    private var savedPasswordApplies: Bool { hasSavedPassword && editedTarget == savedTarget }
+
     private var canSave: Bool {
-        guard !host.target.host.isEmpty, !host.target.username.isEmpty else { return false }
-        return host.usesPassword ? !password.isEmpty || hasSavedPassword : host.keyID != nil
+        guard !editedTarget.host.isEmpty, !editedTarget.username.isEmpty else { return false }
+        return host.usesPassword ? !password.isEmpty || savedPasswordApplies : host.keyID != nil
     }
 
     var body: some View {
@@ -216,7 +229,6 @@ struct HostEditor: View {
                         .textContentType(.URL)
                         .keyboardType(.URL)
                     TextField("User", text: $host.target.username, prompt: Text("me"))
-                        .textContentType(.username)
                     TextField("Port", text: $port, prompt: Text("22"))
                         .keyboardType(.numberPad)
                     Picker("Log In With", selection: $host.usesPassword) {
@@ -224,8 +236,10 @@ struct HostEditor: View {
                         Text("Password").tag(true)
                     }
                     if host.usesPassword {
-                        SecureField("Password", text: $password, prompt: Text(hasSavedPassword ? "Saved" : "Required"))
-                            .textContentType(.password)
+                        // Not .password: with the app's webcredentials domain, iOS would offer to
+                        // save it to Passwords (synced) as a login for that website.
+                        SecureField("Password", text: $password, prompt: Text(savedPasswordApplies ? "Saved" : "Required"))
+                            .textContentType(.oneTimeCode)
                     } else {
                         Picker("Key", selection: $host.keyID) {
                             Text("None").tag(UUID?.none)
@@ -237,7 +251,9 @@ struct HostEditor: View {
                 } header: {
                     Text("SSH")
                 } footer: {
-                    if host.usesPassword {
+                    if host.usesPassword && hasSavedPassword && !savedPasswordApplies {
+                        Text("The saved password only goes to the server and user it was saved for. Enter it again for this one.")
+                    } else if host.usesPassword {
                         Text("Kept in this device's Keychain and never synced. An SSH key is safer, and some servers only allow keys.")
                     }
                 }
@@ -261,6 +277,7 @@ struct HostEditor: View {
                 port = host.target.port == 22 ? "" : String(host.target.port)
                 session = host.session ?? ""
                 hasSavedPassword = hosts.hasPassword(for: host)
+                savedTarget = host.target
             }
             .alert("Could not save", isPresented: .constant(saveError != nil)) {
                 Button("OK") { saveError = nil }
@@ -273,9 +290,7 @@ struct HostEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        host.target.host = host.target.host.trimmingCharacters(in: .whitespaces)
-                        host.target.username = host.target.username.trimmingCharacters(in: .whitespaces)
-                        host.target.port = Int(port) ?? 22
+                        host.target = editedTarget
                         host.session = session.isEmpty ? nil : session
                         if host.name.trimmingCharacters(in: .whitespaces).isEmpty { host.name = host.target.host }
                         do {

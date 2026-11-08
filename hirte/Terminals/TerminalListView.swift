@@ -43,6 +43,8 @@ struct TerminalListView: View {
                 }
             }
             .onAppear { session.start(keys: keys) }
+            // An edited machine (or a new password) gets a fresh session while this stays on screen.
+            .onChange(of: ObjectIdentifier(session)) { session.start(keys: keys) }
             .onChange(of: selection, initial: true) { _, address in
                 held = session.terminal(address).flatMap { terminal in
                     terminal.agentState.map { (terminal.address, $0) }

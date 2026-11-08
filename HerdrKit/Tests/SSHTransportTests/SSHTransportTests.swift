@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 import KeyStore
+import NIOEmbedded
+@preconcurrency import NIOSSH
 import Testing
 @testable import SSHTransport
 
@@ -17,6 +19,27 @@ import Testing
     let password = try #require(SSHCredential.password("correct horse").rejected(username: "me").errorDescription)
     #expect(password.contains("password for me"))
     #expect(!password.contains("correct horse"))
+}
+
+/// A wrong password must not be sent twice, and none goes to a server that doesn't take passwords.
+@Test func aPasswordIsOfferedOnceAndOnlyWhereTaken() throws {
+    let loop = EmbeddedEventLoop()
+    func ask(_ auth: SingleOfferAuthentication, _ methods: NIOSSHAvailableUserAuthenticationMethods) throws -> NIOSSHUserAuthenticationOffer? {
+        let promise = loop.makePromise(of: NIOSSHUserAuthenticationOffer?.self)
+        auth.nextAuthenticationType(availableMethods: methods, nextChallengePromise: promise)
+        loop.run()
+        return try promise.futureResult.wait()
+    }
+    func password() -> SingleOfferAuthentication {
+        SingleOfferAuthentication(
+            username: "me", method: .password, offer: .password(.init(password: "pw")),
+            rejected: .passwordRejected(username: "me"))
+    }
+
+    let auth = password()
+    #expect(try ask(auth, .all) != nil)
+    #expect(throws: SSHTransportError.self) { try ask(auth, .all) }
+    #expect(throws: SSHTransportError.self) { try ask(password(), .publicKey) }
 }
 
 @Test func knownHostsNames() {

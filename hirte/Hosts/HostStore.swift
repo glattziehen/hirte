@@ -35,10 +35,22 @@ struct Host: Identifiable, Codable, Hashable {
     }
 }
 
+enum HostStoreError: LocalizedError {
+    case passwordNeeded
+
+    var errorDescription: String? {
+        switch self {
+        case .passwordNeeded: "Enter the password: the saved one belongs to a different server or user."
+        }
+    }
+}
+
 /// Saved hosts, persisted in UserDefaults. They hold no secrets: passwords are in the Keychain.
 @Observable
 final class HostStore {
     private(set) var hosts: [Host] = []
+    /// Raised for a machine each time its password is set, so its session starts over with it.
+    private(set) var passwordRevisions: [UUID: Int] = [:]
     private let defaults: UserDefaults
     private let passwords: PasswordStore
     private let key = "hirte.hosts"
@@ -61,19 +73,28 @@ final class HostStore {
         persist()
     }
 
-    /// Saves a machine from the editor. `password` is one just typed; nil keeps the saved one. A
-    /// machine that logs in with a key keeps none.
+    /// Saves a machine from the editor. `password` is one just typed; nil keeps the saved one, as long
+    /// as the machine still points at the server and user it was saved for. A machine that logs in
+    /// with a key keeps none.
     func save(_ host: Host, password: String?) throws {
         if !host.usesPassword {
-            try passwords.deletePassword(for: host.id)
+            // Most key machines never had a password: a Keychain hiccup mustn't stop saving them.
+            try? passwords.deletePassword(for: host.id)
         } else if let password {
             try passwords.setPassword(password, for: host.id)
+            passwordRevisions[host.id, default: 0] += 1
+        } else if !hasPassword(for: host) {
+            throw HostStoreError.passwordNeeded
         }
         save(host)
     }
 
+    /// Whether `host` has a saved password it may use: one saved for the server and user it points
+    /// at. A password only ever goes where it was typed for.
     func hasPassword(for host: Host) -> Bool {
-        (try? passwords.password(for: host.id)) != nil
+        guard let saved = hosts.first(where: { $0.id == host.id }),
+              saved.usesPassword, saved.target == host.target else { return false }
+        return (try? passwords.password(for: host.id)) != nil
     }
 
     var hasDemo: Bool { hosts.contains(where: \.isDemo) }

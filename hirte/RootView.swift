@@ -61,6 +61,10 @@ struct RootView: View {
                 sessions.remove(id)
             }
         }
+        .onChange(of: hosts.passwordRevisions) { old, new in
+            // A new password: start over with it (Host doesn't hold it, so the check above misses it).
+            for (id, revision) in new where old[id] != revision { sessions.remove(id) }
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background: sessions.pauseAll()
