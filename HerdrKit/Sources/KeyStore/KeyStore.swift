@@ -344,6 +344,8 @@ struct StoredKey: Codable {
 public protocol KeyStorage: Sendable {
     func loadAll() throws -> [Data]
     func load(account: String) throws -> Data?
+    /// The accounts that have a record, without reading (or decrypting) the records.
+    func accounts() throws -> [String]
     func save(_ data: Data, account: String) throws
     func delete(account: String) throws
 }
@@ -391,6 +393,18 @@ public struct KeychainKeyStorage: KeyStorage {
         return result as? Data
     }
 
+    public func accounts() throws -> [String] {
+        var query = baseQuery
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        query[kSecReturnAttributes as String] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw KeyStoreError.keychain(status) }
+        let items = result as? [[String: Any]] ?? []
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
     public func save(_ data: Data, account: String) throws {
         var query = baseQuery
         query[kSecAttrAccount as String] = account
@@ -425,6 +439,7 @@ public final class InMemoryKeyStorage: KeyStorage, @unchecked Sendable {
 
     public func loadAll() throws -> [Data] { lock.withLock { Array(items.values) } }
     public func load(account: String) throws -> Data? { lock.withLock { items[account] } }
+    public func accounts() throws -> [String] { lock.withLock { Array(items.keys) } }
     public func save(_ data: Data, account: String) throws { lock.withLock { items[account] = data } }
     public func delete(account: String) throws { lock.withLock { _ = items.removeValue(forKey: account) } }
 }

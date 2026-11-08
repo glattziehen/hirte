@@ -48,6 +48,10 @@ public enum SSHCredential: Sendable {
         }
     }
 
+    public var isSecurityKey: Bool {
+        if case .key(.securityKey) = self { true } else { false }
+    }
+
     /// The error for a server saying no to this.
     func rejected(username: String) -> SSHTransportError {
         switch self {

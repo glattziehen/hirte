@@ -61,6 +61,19 @@ final class HostStore {
         if let data = defaults.data(forKey: key),
            let saved = try? JSONDecoder().decode([Host].self, from: data) {
             hosts = saved
+            prunePasswords()
+        } else if defaults.data(forKey: key) == nil {
+            // Keychain items outlive the app: none of a previous install's passwords belong here.
+            prunePasswords()
+        }
+    }
+
+    /// Forgets passwords whose machine is gone, say because deleting one failed. Not when the saved
+    /// machines couldn't be read: their passwords are still needed.
+    private func prunePasswords() {
+        guard let machines = try? passwords.machines() else { return }
+        for id in machines where !hosts.contains(where: { $0.id == id }) {
+            try? passwords.deletePassword(for: id)
         }
     }
 
@@ -94,7 +107,9 @@ final class HostStore {
     func hasPassword(for host: Host) -> Bool {
         guard let saved = hosts.first(where: { $0.id == host.id }),
               saved.usesPassword, saved.target == host.target else { return false }
-        return (try? passwords.password(for: host.id)) != nil
+        // When the Keychain can't tell, keep what's saved: connecting then reports the real error,
+        // rather than the editor asking for a password that is there.
+        return (try? passwords.hasPassword(for: host.id)) ?? true
     }
 
     var hasDemo: Bool { hosts.contains(where: \.isDemo) }
@@ -109,6 +124,7 @@ final class HostStore {
     }
 
     func delete(at offsets: IndexSet) {
+        // One that fails is cleaned up on a later launch (prunePasswords).
         for index in offsets { try? passwords.deletePassword(for: hosts[index].id) }
         hosts.remove(atOffsets: offsets)
         persist()

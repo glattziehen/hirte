@@ -226,9 +226,11 @@ struct HostEditor: View {
                 }
                 Section {
                     TextField("Host", text: $host.target.host, prompt: Text("server.example.com"))
+                        .accessibilityIdentifier("machine-host")
                         .textContentType(.URL)
                         .keyboardType(.URL)
                     TextField("User", text: $host.target.username, prompt: Text("me"))
+                        .accessibilityIdentifier("machine-user")
                     TextField("Port", text: $port, prompt: Text("22"))
                         .keyboardType(.numberPad)
                     Picker("Log In With", selection: $host.usesPassword) {
@@ -240,6 +242,7 @@ struct HostEditor: View {
                         // save it to Passwords (synced) as a login for that website.
                         SecureField("Password", text: $password, prompt: Text(savedPasswordApplies ? "Saved" : "Required"))
                             .textContentType(.oneTimeCode)
+                            .accessibilityIdentifier("machine-password")
                     } else {
                         Picker("Key", selection: $host.keyID) {
                             Text("None").tag(UUID?.none)
@@ -279,8 +282,10 @@ struct HostEditor: View {
                 hasSavedPassword = hosts.hasPassword(for: host)
                 savedTarget = host.target
             }
-            .alert("Could not save", isPresented: .constant(saveError != nil)) {
-                Button("OK") { saveError = nil }
+            .alert("Could not save", isPresented: Binding(
+                get: { saveError != nil }, set: { if !$0 { saveError = nil } })
+            ) {
+                Button("OK") {}
             } message: {
                 Text(saveError ?? "")
             }

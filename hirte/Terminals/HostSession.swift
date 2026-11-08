@@ -210,7 +210,7 @@ final class HostSession {
                 onUnknownHost: { [weak self] offered in
                     await self?.askToTrust(offered) ?? false
                 })
-        } catch SSHTransportError.authenticationFailed where keys.key(id: host.keyID)?.kind == .securityKey {
+        } catch SSHTransportError.authenticationFailed where credential.isSecurityKey {
             throw SessionError.securityKeyRejected
         }
         self.ssh = ssh

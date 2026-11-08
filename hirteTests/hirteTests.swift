@@ -111,6 +111,32 @@ struct HostTests {
     }
 }
 
+extension HostTests {
+    /// A password left behind (a delete that failed, a previous install) goes on the next launch.
+    @Test func leftoverPasswordsAreForgotten() throws {
+        let suite = "hirteTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let passwords = PasswordStore(storage: InMemoryKeyStorage())
+        let orphan = UUID()
+        try passwords.setPassword("left behind", for: orphan)
+
+        var host = Host(name: "Mini", target: SSHTarget(host: "mini.local", username: "pavel"))
+        host.usesPassword = true
+        try HostStore(defaults: defaults, passwords: passwords).save(host, password: "kept")
+        #expect(try passwords.machines() == [host.id])
+
+        try passwords.setPassword("left behind", for: orphan)
+        _ = HostStore(defaults: defaults, passwords: passwords)
+        #expect(try passwords.machines() == [host.id])
+
+        // Saved machines that can't be read keep their passwords.
+        defaults.set(Data("not json".utf8), forKey: "hirte.hosts")
+        _ = HostStore(defaults: defaults, passwords: passwords)
+        #expect(try passwords.hasPassword(for: host.id))
+    }
+}
+
 @MainActor
 struct ConnectionErrorTests {
     /// Trying a rejected login again and again can get the account locked or the address banned.

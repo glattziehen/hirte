@@ -281,7 +281,9 @@ final class DemoTourTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Copy Address"].waitForExistence(timeout: 5), "the menu opens")
-        let screen = app.descendants(matching: .any).matching(identifier: "terminal-screen").firstMatch
+        // iOS 26 drops the canvas's identifier in a menu preview; its label ("Terminal") stays.
+        let screen = app.otherElements["Preview"].descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'terminal-screen' OR label == 'Terminal'")).firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 5), "with the terminal's screen above it")
         sleep(1)
         shot(app, "preview-0-menu")
@@ -463,17 +465,17 @@ final class DemoTourTests: XCTestCase {
         let add = app.buttons["Add Machine…"]
         XCTAssertTrue(add.waitForExistence(timeout: 5), "the title menu offers Add Machine")
         add.tap()
-        let host = app.textFields["Host"]
+        let host = app.textFields["machine-host"]
         XCTAssertTrue(host.waitForExistence(timeout: 5))
         host.tap()
         let hint = app.buttons["Continue"]
         if hint.waitForExistence(timeout: 2) { hint.tap() }
         host.typeText("server.example.com")
-        let user = app.textFields["User"]
+        let user = app.textFields["machine-user"]
         user.tap()
         user.typeText("me")
         // It starts on a password only when there are no keys.
-        let password = app.secureTextFields["Password"]
+        let password = app.secureTextFields["machine-password"]
         if !password.exists {
             app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Log In With'")).firstMatch.tap()
             app.buttons["Password"].tap()

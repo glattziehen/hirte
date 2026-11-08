@@ -13,6 +13,16 @@ public struct PasswordStore: Sendable {
         try storage.load(account: machine.uuidString).map { String(decoding: $0, as: UTF8.self) }
     }
 
+    /// Whether `machine` has a password, without reading it.
+    public func hasPassword(for machine: UUID) throws -> Bool {
+        try machines().contains(machine)
+    }
+
+    /// The machines that have a password.
+    public func machines() throws -> Set<UUID> {
+        Set(try storage.accounts().compactMap(UUID.init(uuidString:)))
+    }
+
     public func setPassword(_ password: String, for machine: UUID) throws {
         try storage.save(Data(password.utf8), account: machine.uuidString)
     }
