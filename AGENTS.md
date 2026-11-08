@@ -33,8 +33,10 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
   per target). The justfile and `scripts/screenshots.sh` pass `HIRTE_TEAM` / `HIRTE_BUNDLE_ID_PREFIX`
   from the environment over them, so others build with their own team without editing tracked files.
   (The new project format has no way to reference an `.xcconfig`, as far as we know.)
-- **CI** (`.github/workflows/ci.yml`): HerdrKit tests (without `KeyStoreTests`, which need the data
-  protection keychain) and an unsigned device build, on a macOS runner with Xcode 27.
+- **CI** (`.github/workflows/ci.yml`): two parallel jobs on GitHub's `xcode-27` image (Xcode 26
+  can't read the project format): HerdrKit tests (without `KeyStoreTests`, which need the data
+  protection keychain), and the app's unit tests on a simulator (no UI tests). Shared setup
+  (Xcode, cached libghostty-vt) is in `.github/actions/setup`. Aim: under 10 minutes.
 - **The project file** is `hirte.xcodeproj/project.xcproj` (a JSON-like format, not `project.pbxproj`).
   Per-configuration keys (`KEY[config=Debug]`) only work in the project-level `build-settings`, not in
   a target's. `hirte/` is a synchronized folder: new files there are in the target automatically.
