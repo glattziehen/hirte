@@ -35,8 +35,10 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
   (The new project format has no way to reference an `.xcconfig`, as far as we know.)
 - **CI** (`.github/workflows/ci.yml`): two parallel jobs on GitHub's `xcode-27` image (Xcode 26
   can't read the project format): HerdrKit tests (without `KeyStoreTests`, which need the data
-  protection keychain), and the app's unit tests on a simulator (no UI tests). Shared setup
-  (Xcode, cached libghostty-vt) is in `.github/actions/setup`. Aim: under 10 minutes.
+  protection keychain), and a simulator build of the app and its test targets. The app's tests don't
+  run in CI: booting a simulator on a fresh runner takes 5-7 minutes. Run them locally. The package
+  builds are cached per Xcode build and `Package.resolved`; libghostty-vt per Ghostty pin
+  (`.github/actions/setup`). Aim: under 5 minutes.
 - **The project file** is `hirte.xcodeproj/project.xcproj` (a JSON-like format, not `project.pbxproj`).
   Per-configuration keys (`KEY[config=Debug]`) only work in the project-level `build-settings`, not in
   a target's. `hirte/` is a synchronized folder: new files there are in the target automatically.

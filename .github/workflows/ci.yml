@@ -31,24 +31,15 @@ jobs:
         working-directory: HerdrKit
         run: swift test --skip KeyStoreTests
 
+  # Builds the app and its tests for the simulator, without running them: booting a simulator on a
+  # fresh runner took 5-7 minutes (November 2026), the 19 unit tests under a second.
   app:
-    name: App tests
+    name: App build
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
-
-      - name: Pick a simulator
-        id: simulator
-        run: |
-          udid="$(xcrun simctl list devices available -j | jq -r '
-            [.devices | to_entries | sort_by(.key)[] | select(.key | contains("iOS")) | .value[]
-             | select(.name == "iPhone 17")] | last | .udid')"
-          if [ -z "$udid" ] || [ "$udid" = null ]; then
-            echo "::error::No iPhone 17 simulator"; xcrun simctl list devices available; exit 1
-          fi
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       # Compiling the Swift packages (SwiftNIO, BoringSSL, Citadel…) is most of the build, so
       # their checkouts and build products are cached per Xcode build and package pins. Fresh
@@ -69,15 +60,15 @@ jobs:
             .build/xcode/ModuleCache.noindex
           key: ${{ steps.key.outputs.key }}
 
-      # Builds the app for the simulator. NSUnbufferedIO keeps xcodebuild's output (and so the
-      # log's timestamps) live; no index store saves build time.
+      # NSUnbufferedIO keeps xcodebuild's output (and so the log's timestamps) live; no index store
+      # saves build time. build-for-testing compiles the test targets too.
       - name: Build
         env:
           NSUnbufferedIO: "YES"
         run: |
           set -o pipefail
           xcodebuild -project hirte.xcodeproj -scheme hirte -configuration Debug \
-            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -destination "platform=iOS Simulator,name=iPhone 17,OS=latest" \
             -derivedDataPath .build/xcode -clonedSourcePackagesDirPath .build/spm \
             -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build-for-testing | xcbeautify
@@ -91,16 +82,3 @@ jobs:
             .build/xcode/Build
             .build/xcode/ModuleCache.noindex
           key: ${{ steps.key.outputs.key }}
-
-      # The app's unit tests. The UI tests are left out: slow, and the screenshot and video ones
-      # only run on request anyway. (Booting the simulator during the build slowed the build down.)
-      - name: Test
-        env:
-          NSUnbufferedIO: "YES"
-        run: |
-          set -o pipefail
-          xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
-          xcodebuild -project hirte.xcodeproj -scheme hirte -configuration Debug \
-            -destination "id=${{ steps.simulator.outputs.udid }}" \
-            -derivedDataPath .build/xcode -clonedSourcePackagesDirPath .build/spm \
-            -only-testing:hirteTests test-without-building | xcbeautify
