@@ -1,4 +1,5 @@
 import HerdrKit
+import Machines
 import SwiftUI
 
 /// The one sidebar: the selected machine's terminals, with the machine switcher in the title.

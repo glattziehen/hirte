@@ -1,3 +1,4 @@
+import Machines
 import SwiftUI
 
 /// App-wide settings, and what Hirte is.

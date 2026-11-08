@@ -1,4 +1,5 @@
 import HerdrKit
+import Machines
 import SwiftUI
 
 /// A machine's terminals, live from events, in two views like herdr-app's sidebar: the agents
@@ -717,16 +718,6 @@ extension Terminal {
     /// When its status word last changed, as herdr-core reports it.
     var statusSince: Date? {
         statusMs.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000) }
-    }
-
-    /// "now", "47m", "3h", "2d": how long ago, as short as herdr-app's agents list shows it.
-    /// A machine's clock running ahead reads as now.
-    static func shortAge(_ date: Date, now: Date = .now) -> String {
-        let minutes = Int(now.timeIntervalSince(date) / 60)
-        if minutes < 1 { return "now" }
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes < 24 * 60 { return "\(minutes / 60)h" }
-        return "\(minutes / (24 * 60))d"
     }
 
     static func abbreviate(_ path: String) -> String {

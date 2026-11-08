@@ -135,3 +135,15 @@ public struct TerminalList: Codable, Sendable {
         machines = try c.decodeIfPresent([MachineView].self, forKey: .machines) ?? []
     }
 }
+
+extension Terminal {
+    /// "now", "47m", "3h", "2d": how long ago, as short as herdr-app's agents list shows it.
+    /// A machine's clock running ahead reads as now.
+    public static func shortAge(_ date: Date, now: Date = .now) -> String {
+        let minutes = Int(now.timeIntervalSince(date) / 60)
+        if minutes < 1 { return "now" }
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 24 * 60 { return "\(minutes / 60)h" }
+        return "\(minutes / (24 * 60))d"
+    }
+}

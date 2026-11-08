@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "SSHTransport", targets: ["SSHTransport"]),
         .library(name: "KeyStore", targets: ["KeyStore"]),
         .library(name: "TerminalCore", targets: ["TerminalCore"]),
+        .library(name: "Machines", targets: ["Machines"]),
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel", from: "0.12.1"),
@@ -26,9 +27,13 @@ let package = Package(
         .binaryTarget(name: "GhosttyVt", path: "Frameworks/ghostty-vt.xcframework"),
         .target(name: "TerminalCore", dependencies: ["GhosttyVt"]),
         .target(name: "HerdrKit", dependencies: ["SSHTransport", "TerminalCore"]),
+        // The app's saved machines (passwords in the Keychain) and when to reconnect: app logic
+        // without UI, here so it's tested with the package.
+        .target(name: "Machines", dependencies: ["HerdrKit", "KeyStore", "SSHTransport"]),
         .testTarget(name: "KeyStoreTests", dependencies: ["KeyStore"]),
         .testTarget(name: "SSHTransportTests", dependencies: ["SSHTransport", .product(name: "Citadel", package: "Citadel")]),
         .testTarget(name: "TerminalCoreTests", dependencies: ["TerminalCore"]),
         .testTarget(name: "HerdrKitTests", dependencies: ["HerdrKit", "TerminalCore"]),
+        .testTarget(name: "MachinesTests", dependencies: ["Machines", "HerdrKit", "KeyStore"]),
     ]
 )

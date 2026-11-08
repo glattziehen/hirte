@@ -1,4 +1,5 @@
 import HerdrKit
+import Machines
 import SwiftUI
 
 /// The saved machines: add, edit, delete, keys. The sidebar's root while there are none (with the
@@ -108,13 +109,6 @@ struct MachinesView: View {
 
     private func newHost() -> Host {
         Host.new(key: keys.keys.last?.id)
-    }
-}
-
-extension Host {
-    /// An empty machine for the editor, with the newest key preselected, or a password without one.
-    static func new(key: UUID?) -> Host {
-        Host(name: "", target: SSHTarget(host: "", username: ""), keyID: key, passwordLogin: key == nil ? true : nil)
     }
 }
 

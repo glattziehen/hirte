@@ -14,6 +14,9 @@ and how to build it.
     herdr-app spaces, and `DemoCore`, an in-app fake herdr-core behind the same transport (content in
     `DemoScript.swift`)
   - `SSHTransport` (Citadel), `KeyStore` (Secure Enclave keys), `TerminalCore` (libghostty-vt wrapper)
+  - `Machines`: the app's saved machines (`Host`, `HostStore`; passwords in the Keychain) and when to
+    reconnect after an error (`Retry`). App logic without UI lives here, so CI tests it; the app
+    links it as its own product. On macOS, Foundation has a `Host` too: tests say `Machines.Host`.
 - `vendor/ghostty`: submodule; `just ghostty` builds `HerdrKit/Frameworks/ghostty-vt.xcframework`
   (not checked in). Its C headers are the reference for the terminal API.
 
@@ -36,7 +39,8 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
 - **CI** (`.github/workflows/ci.yml`): two parallel jobs on GitHub's `xcode-27` image (Xcode 26
   can't read the project format): HerdrKit tests (without `KeyStoreTests`, which need the data
   protection keychain), and a simulator build of the app and its test targets. The app's tests don't
-  run in CI: booting a simulator on a fresh runner takes 5-7 minutes. Run them locally. The package
+  run in CI: booting a simulator on a fresh runner takes 5-7 minutes. Run them locally, and put
+  logic that needs tests into the package (`Machines`) rather than the app. The package
   builds are cached per Xcode build and `Package.resolved`; libghostty-vt per Ghostty pin
   (`.github/actions/setup`). Aim: under 5 minutes.
 - **The project file** is `hirte.xcodeproj/project.xcproj` (a JSON-like format, not `project.pbxproj`).

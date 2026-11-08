@@ -1,4 +1,5 @@
 import HerdrKit
+import Machines
 import SwiftUI
 
 @main

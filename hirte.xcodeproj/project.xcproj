@@ -46,6 +46,10 @@
           "product-name": "HerdrKit",
           "build-phase": { "build-phase": "frameworks" },
         },
+        {
+          "product-name": "Machines",
+          "build-phase": { "build-phase": "frameworks" },
+        },
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon$(HIRTE_ICON_SUFFIX)",

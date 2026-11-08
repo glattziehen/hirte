@@ -1,4 +1,5 @@
 import HerdrKit
+import Machines
 import SwiftUI
 
 /// Two columns when unfolded (terminals | terminal), a stack when folded. The machine is picked
