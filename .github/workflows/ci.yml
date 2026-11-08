@@ -39,8 +39,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
 
-      # Boot the simulator now, so it starts up while the app compiles.
-      - name: Boot a simulator
+      - name: Pick a simulator
         id: simulator
         run: |
           udid="$(xcrun simctl list devices available -j | jq -r '
@@ -50,20 +49,28 @@ jobs:
             echo "::error::No iPhone 17 simulator"; xcrun simctl list devices available; exit 1
           fi
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          xcrun simctl boot "$udid"
 
-      # hashFiles() timed out on this file on the xcode-27 image (November 2026), so hash it here.
-      - name: Package pins
-        id: packages
-        run: echo "hash=$(shasum -a 256 hirte.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Compiling the Swift packages (SwiftNIO, BoringSSL, Citadel…) is most of the build, so
+      # their checkouts and build products are cached per Xcode build and package pins. Fresh
+      # checkouts give the app's and HerdrKit's sources new timestamps, so those always rebuild.
+      # (hashFiles() timed out on Package.resolved on the xcode-27 image, November 2026.)
+      - name: Build cache key
+        id: key
+        run: |
+          xcode="$(xcodebuild -version | tail -1 | awk '{print $3}')"
+          pins="$(shasum -a 256 hirte.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -c1-16)"
+          echo "key=xcode-build-$xcode-$pins" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
         with:
-          path: .build/spm
-          key: spm-${{ steps.packages.outputs.hash }}
+          path: |
+            .build/spm
+            .build/xcode/Build
+            .build/xcode/ModuleCache.noindex
+          key: ${{ steps.key.outputs.key }}
 
-      # Builds the app for the simulator, then runs its unit tests. The UI tests are left out: slow,
-      # and the screenshot and video ones only run on request anyway. NSUnbufferedIO keeps
-      # xcodebuild's output (and so the log's timestamps) live; no index store saves build time.
+      # Builds the app for the simulator. NSUnbufferedIO keeps xcodebuild's output (and so the
+      # log's timestamps) live; no index store saves build time.
       - name: Build
         env:
           NSUnbufferedIO: "YES"
@@ -72,8 +79,21 @@ jobs:
           xcodebuild -project hirte.xcodeproj -scheme hirte -configuration Debug \
             -destination "id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath .build/xcode -clonedSourcePackagesDirPath .build/spm \
+            -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build-for-testing | xcbeautify
 
+      # Saved once per key; later runs only rebuild the app on top of it.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .build/spm
+            .build/xcode/Build
+            .build/xcode/ModuleCache.noindex
+          key: ${{ steps.key.outputs.key }}
+
+      # The app's unit tests. The UI tests are left out: slow, and the screenshot and video ones
+      # only run on request anyway. (Booting the simulator during the build slowed the build down.)
       - name: Test
         env:
           NSUnbufferedIO: "YES"
