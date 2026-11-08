@@ -299,6 +299,23 @@ private let layoutJSON = #"""
     #expect(HerdrCore.connectCommand(session: "scratch").contains("HC_SESSION=scratch exec"))
 }
 
+@Test func onlyOurOwnMessageMeansNotInstalled() {
+    #expect(HerdrCore.isNotInstalled(
+        SSHTransportError.commandFailed(exitCode: 127, stderr: HerdrCore.notInstalledMessage)))
+    // The binary is there, but exec can't run it.
+    #expect(!HerdrCore.isNotInstalled(
+        SSHTransportError.commandFailed(exitCode: 127, stderr: "sh: 1: exec: /home/me/.local/bin/herdr-core: not found")))
+    #expect(!HerdrCore.isNotInstalled(
+        SSHTransportError.commandFailed(exitCode: 1, stderr: HerdrCore.notInstalledMessage)))
+}
+
+@Test func aFailedCommandShowsStderrAndExitCode() {
+    #expect(SSHTransportError.commandFailed(exitCode: 2, stderr: "bad session").errorDescription
+        == "bad session (exit code 2)")
+    #expect(SSHTransportError.commandFailed(exitCode: 2, stderr: "").errorDescription
+        == "The remote command exited with code 2.")
+}
+
 #if os(macOS)
 private let localCore = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".local/bin/herdr-core")

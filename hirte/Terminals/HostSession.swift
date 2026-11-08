@@ -341,8 +341,8 @@ final class HostSession {
     }
 
     private static func describe(_ error: Error) -> String {
-        if case SSHTransportError.commandFailed(127, _) = error {
-            return "herdr-core is not installed on this machine."
+        if HerdrCore.isNotInstalled(error) {
+            return "herdr-core is not installed on this machine (looked on PATH and in ~/.local/bin)."
         }
         if let error = error as? LocalizedError, let description = error.errorDescription {
             return description

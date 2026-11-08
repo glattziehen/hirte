@@ -22,7 +22,9 @@ public enum SSHTransportError: Error, LocalizedError {
             "The server did not accept the password for \(username). "
                 + "If it's right, the server may not allow password login: use an SSH key instead."
         case .commandFailed(let code, let stderr):
-            stderr.isEmpty ? "The remote command exited with \(code)." : stderr
+            stderr.isEmpty
+                ? "The remote command exited with code \(code)."
+                : "\(stderr) (exit code \(code))"
         }
     }
 }

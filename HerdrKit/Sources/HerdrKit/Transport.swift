@@ -29,6 +29,16 @@ public enum HerdrCore {
 
     public static let notInstalledMessage = "herdr-core is not installed here"
 
+    /// Whether `connectCommand` ended because it didn't find herdr-core. Exit code 127 alone isn't
+    /// enough: `exec` gives it too when the binary is there but can't run (say, its loader is
+    /// missing), and so can herdr-core itself. Only our own message on stderr says so.
+    public static func isNotInstalled(_ error: Error) -> Bool {
+        if case SSHTransportError.commandFailed(127, let stderr) = error {
+            return stderr.contains(notInstalledMessage)
+        }
+        return false
+    }
+
     /// Session names are restricted by herdr-core, but stay safe inside the outer single quotes anyway.
     private static func shellQuoteInner(_ value: String) -> String {
         value.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
