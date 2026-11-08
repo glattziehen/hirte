@@ -52,10 +52,14 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$udid"
 
+      # hashFiles() timed out on this file on the xcode-27 image (November 2026), so hash it here.
+      - name: Package pins
+        id: packages
+        run: echo "hash=$(shasum -a 256 hirte.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/spm
-          key: spm-${{ hashFiles('hirte.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-${{ steps.packages.outputs.hash }}
 
       # Builds the app for the simulator, then runs its unit tests. The UI tests are left out: slow,
       # and the screenshot and video ones only run on request anyway. NSUnbufferedIO keeps
