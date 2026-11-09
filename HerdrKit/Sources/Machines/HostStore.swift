@@ -1,44 +1,62 @@
 import Foundation
-import HerdrKit
+import KeyStore
 import Observation
-import SwiftUI
+import SSHTransport
 
 /// A machine running herdr-core that we reach over SSH.
-struct Host: Identifiable, Codable, Hashable {
-    var id = UUID()
-    var name: String
-    var target: SSHTarget
-    var keyID: UUID?
+public struct Host: Identifiable, Codable, Hashable, Sendable {
+    public var id = UUID()
+    public var name: String
+    public var target: SSHTarget
+    public var keyID: UUID?
     /// Logs in with a password from the Keychain instead of a key.
     /// Optional so hosts saved before it existed still decode.
-    var passwordLogin: Bool?
+    public var passwordLogin: Bool?
     /// herdr-core session on that machine (nil: its default).
-    var session: String?
+    public var session: String?
     /// The built-in demo machine: a pretend herdr-core inside the app, no SSH.
     /// Optional so hosts saved before it existed still decode.
-    var demo: Bool?
+    public var demo: Bool?
 
-    var isDemo: Bool { demo == true }
+    public init(
+        id: UUID = UUID(), name: String, target: SSHTarget, keyID: UUID? = nil,
+        passwordLogin: Bool? = nil, session: String? = nil, demo: Bool? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.target = target
+        self.keyID = keyID
+        self.passwordLogin = passwordLogin
+        self.session = session
+        self.demo = demo
+    }
 
-    var usesPassword: Bool {
+    public var isDemo: Bool { demo == true }
+
+    public var usesPassword: Bool {
         get { passwordLogin == true }
         set { passwordLogin = newValue ? true : nil }
     }
 
-    var subtitle: String {
+    public var subtitle: String {
         if isDemo { return "Built in · try Hirte without a server" }
         return "\(target.username)@\(target.host)" + (target.port == 22 ? "" : ":\(target.port)")
     }
 
-    static func makeDemo() -> Host {
+    /// An empty machine for the editor, with the newest key preselected, or a password without one.
+    public static func new(key: UUID?) -> Host {
+        Host(name: "", target: SSHTarget(host: "", username: ""), keyID: key, passwordLogin: key == nil ? true : nil)
+    }
+
+    public static func makeDemo() -> Host {
         Host(name: "Demo machine", target: SSHTarget(host: "demo", username: "demo"), demo: true)
     }
 }
 
-enum HostStoreError: LocalizedError {
+public enum HostStoreError: LocalizedError {
     case passwordNeeded
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .passwordNeeded: "Enter the password: the saved one belongs to a different server or user."
         }
@@ -46,16 +64,17 @@ enum HostStoreError: LocalizedError {
 }
 
 /// Saved hosts, persisted in UserDefaults. They hold no secrets: passwords are in the Keychain.
+@MainActor
 @Observable
-final class HostStore {
-    private(set) var hosts: [Host] = []
+public final class HostStore {
+    public private(set) var hosts: [Host] = []
     /// Raised for a machine each time its password is set, so its session starts over with it.
-    private(set) var passwordRevisions: [UUID: Int] = [:]
+    public private(set) var passwordRevisions: [UUID: Int] = [:]
     private let defaults: UserDefaults
     private let passwords: PasswordStore
     private let key = "hirte.hosts"
 
-    init(defaults: UserDefaults = .standard, passwords: PasswordStore = PasswordStore()) {
+    public init(defaults: UserDefaults = .standard, passwords: PasswordStore = PasswordStore()) {
         self.defaults = defaults
         self.passwords = passwords
         if let data = defaults.data(forKey: key),
@@ -77,7 +96,7 @@ final class HostStore {
         }
     }
 
-    func save(_ host: Host) {
+    public func save(_ host: Host) {
         if let index = hosts.firstIndex(where: { $0.id == host.id }) {
             hosts[index] = host
         } else {
@@ -89,7 +108,7 @@ final class HostStore {
     /// Saves a machine from the editor. `password` is one just typed; nil keeps the saved one, as long
     /// as the machine still points at the server and user it was saved for. A machine that logs in
     /// with a key keeps none.
-    func save(_ host: Host, password: String?) throws {
+    public func save(_ host: Host, password: String?) throws {
         if !host.usesPassword {
             // Most key machines never had a password: a Keychain hiccup mustn't stop saving them.
             try? passwords.deletePassword(for: host.id)
@@ -104,7 +123,7 @@ final class HostStore {
 
     /// Whether `host` has a saved password it may use: one saved for the server and user it points
     /// at. A password only ever goes where it was typed for.
-    func hasPassword(for host: Host) -> Bool {
+    public func hasPassword(for host: Host) -> Bool {
         guard let saved = hosts.first(where: { $0.id == host.id }),
               saved.usesPassword, saved.target == host.target else { return false }
         // When the Keychain can't tell, keep what's saved: connecting then reports the real error,
@@ -112,21 +131,21 @@ final class HostStore {
         return (try? passwords.hasPassword(for: host.id)) ?? true
     }
 
-    var hasDemo: Bool { hosts.contains(where: \.isDemo) }
+    public var hasDemo: Bool { hosts.contains(where: \.isDemo) }
 
     /// Adds the demo machine (once) and returns it.
     @discardableResult
-    func addDemo() -> Host {
+    public func addDemo() -> Host {
         if let existing = hosts.first(where: \.isDemo) { return existing }
         let demo = Host.makeDemo()
         save(demo)
         return demo
     }
 
-    func delete(at offsets: IndexSet) {
+    public func delete(at offsets: IndexSet) {
         // One that fails is cleaned up on a later launch (prunePasswords).
         for index in offsets { try? passwords.deletePassword(for: hosts[index].id) }
-        hosts.remove(atOffsets: offsets)
+        for index in offsets.reversed() { hosts.remove(at: index) }
         persist()
     }
 

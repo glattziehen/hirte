@@ -14,6 +14,9 @@ and how to build it.
     herdr-app spaces, and `DemoCore`, an in-app fake herdr-core behind the same transport (content in
     `DemoScript.swift`)
   - `SSHTransport` (Citadel), `KeyStore` (Secure Enclave keys), `TerminalCore` (libghostty-vt wrapper)
+  - `Machines`: the app's saved machines (`Host`, `HostStore`; passwords in the Keychain) and when to
+    reconnect after an error (`Retry`). App logic without UI lives here, so CI tests it; the app
+    links it as its own product. On macOS, Foundation has a `Host` too: tests say `Machines.Host`.
 - `vendor/ghostty`: submodule; `just ghostty` builds `HerdrKit/Frameworks/ghostty-vt.xcframework`
   (not checked in). Its C headers are the reference for the terminal API.
 
@@ -33,8 +36,13 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
   per target). The justfile and `scripts/screenshots.sh` pass `HIRTE_TEAM` / `HIRTE_BUNDLE_ID_PREFIX`
   from the environment over them, so others build with their own team without editing tracked files.
   (The new project format has no way to reference an `.xcconfig`, as far as we know.)
-- **CI** (`.github/workflows/ci.yml`): HerdrKit tests (without `KeyStoreTests`, which need the data
-  protection keychain) and an unsigned device build, on a macOS runner with Xcode 27.
+- **CI** (`.github/workflows/ci.yml`): two parallel jobs on GitHub's `xcode-27` image (Xcode 26
+  can't read the project format): HerdrKit tests (without `KeyStoreTests`, which need the data
+  protection keychain), and a simulator build of the app and its test targets. The app's tests don't
+  run in CI: booting a simulator on a fresh runner takes 5-7 minutes. Run them locally, and put
+  logic that needs tests into the package (`Machines`) rather than the app. Cached:
+  libghostty-vt per Ghostty pin (built with `just` from `pixi global install` on a miss), the
+  app's package builds per Xcode build and `Package.resolved`. Aim: under 5 minutes.
 - **The project file** is `hirte.xcodeproj/project.xcproj` (a JSON-like format, not `project.pbxproj`).
   Per-configuration keys (`KEY[config=Debug]`) only work in the project-level `build-settings`, not in
   a target's. `hirte/` is a synchronized folder: new files there are in the target automatically.

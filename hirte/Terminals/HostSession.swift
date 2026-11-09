@@ -1,5 +1,6 @@
 import Foundation
 import HerdrKit
+import Machines
 import Observation
 
 /// One machine's connection: SSH, herdr-core, and a live terminal snapshot kept
@@ -321,22 +322,14 @@ final class HostSession {
 
     // MARK: Errors
 
-    /// Network trouble is retried; problems a person must fix are not. Above all a rejected login:
-    /// trying again and again can get the account locked or the address banned.
+    /// Network trouble is retried; problems a person must fix are not. The app's own errors here,
+    /// the rest (a rejected login above all) in `Retry`.
     static func isRetryable(_ error: Error) -> Bool {
         switch error {
-        case is SessionError: return error as? SessionError == .connectionLost || error as? SessionError == .timedOut
+        case let error as SessionError: return error == .connectionLost || error == .timedOut
         // Retrying would ask for the security key again and again.
-        case is SecurityKeyPromptError, is SecurityKeyError: return false
-        case SSHTransportError.commandFailed, SSHTransportError.authenticationFailed,
-             SSHTransportError.passwordRejected, SSHTransportError.hostKeyChanged,
-             SSHTransportError.hostKeyRejected:
-            return false
-        case HerdrError.rpc, HerdrError.invalidResponse: return false
-        default:
-            // Face ID cancelled, key missing, ... come from LocalAuthentication / CryptoKit.
-            let domain = (error as NSError).domain
-            return domain != "com.apple.LocalAuthentication" && domain != "CryptoTokenKit"
+        case is SecurityKeyPromptError: return false
+        default: return Retry.makesSense(after: error)
         }
     }
 
