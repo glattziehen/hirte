@@ -231,6 +231,37 @@ final class DemoTourTests: XCTestCase {
         shot(app, "zoom-2-out")
     }
 
+    /// The key bar's Shift applies to the next key, whichever that is. ^C stays an interrupt, so it
+    /// lets go of Shift.
+    @MainActor
+    func testKeyBar() throws {
+        let app = XCUIApplication()
+        app.launch()
+        startDemo(app)
+        open(app, "t5")
+        sleep(2)
+        let keyboard = app.buttons["Show Keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        keyboard.tap()
+        // iOS explains slide-to-type the first time a keyboard appears.
+        let hint = app.buttons["Continue"]
+        if hint.waitForExistence(timeout: 2) { hint.tap() }
+
+        let shift = app.buttons["Shift"]
+        XCTAssertTrue(shift.waitForExistence(timeout: 5), "the key bar shows Shift")
+        shift.tap()
+        XCTAssertTrue(shift.isSelected, "Shift stays on for the next key")
+        shot(app, "key-bar-shift")
+        app.buttons["Right"].tap()
+        sleep(1)
+        XCTAssertFalse(shift.isSelected, "Shift applied to that key")
+
+        shift.tap()
+        app.buttons["Control C"].tap()
+        sleep(1)
+        XCTAssertFalse(shift.isSelected, "^C lets go of Shift")
+    }
+
     /// Watch Only: the terminal opens as an observer; tapping it takes over (and the choice is
     /// remembered for the next terminal until it's switched off).
     @MainActor
