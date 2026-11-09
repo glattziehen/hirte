@@ -893,8 +893,20 @@ final class TerminalCanvasView: UIView, UITextInput {
         keyBar.controlOn = model?.controlLatched ?? false
     }
 
+    func keyBarToggleShift() {
+        model?.shiftLatched.toggle()
+        keyBar.shiftOn = model?.shiftLatched ?? false
+    }
+
+    func keyBarInterrupt() {
+        // An interrupt also when Shift was left on, which would make it another key.
+        model?.shiftLatched = false
+        keyBarPressed(.letter("c"), modifiers: .control)
+    }
+
     func refreshKeyBar() {
         keyBar.controlOn = model?.controlLatched ?? false
+        keyBar.shiftOn = model?.shiftLatched ?? false
     }
 }
 
@@ -1021,9 +1033,14 @@ extension UIColor {
 final class KeyBar: UIInputView {
     private weak var target: TerminalCanvasView?
     private var controlButton: UIButton!
+    private var shiftButton: UIButton!
 
     var controlOn = false {
         didSet { controlButton.isSelected = controlOn }
+    }
+
+    var shiftOn = false {
+        didSet { shiftButton.isSelected = shiftOn }
     }
 
     init(target: TerminalCanvasView) {
@@ -1048,7 +1065,7 @@ final class KeyBar: UIInputView {
         func button(_ title: String, symbol: String? = nil, label: String, action: @escaping () -> Void) -> UIButton {
             var config = UIButton.Configuration.gray()
             config.cornerStyle = .medium
-            // Eleven keys share the width: small insets, and one line ("ctrl" must not wrap).
+            // Twelve keys share the width: small insets, and one line ("ctrl" must not wrap).
             config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2)
             config.titleLineBreakMode = .byClipping
             config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
@@ -1066,19 +1083,25 @@ final class KeyBar: UIInputView {
             return button
         }
 
+        /// Lights up while it applies to the next key.
+        func latch(_ key: UIButton) -> UIButton {
+            key.configurationUpdateHandler = { button in
+                var config = button.configuration
+                config?.baseBackgroundColor = button.isSelected ? .tintColor : nil
+                config?.baseForegroundColor = button.isSelected ? .white : nil
+                button.configuration = config
+            }
+            return key
+        }
+
         stack.addArrangedSubview(button("esc", label: "Escape") { [weak self] in self?.target?.keyBarPressed(.escape) })
         stack.addArrangedSubview(button("tab", label: "Tab") { [weak self] in self?.target?.keyBarPressed(.tab) })
-        controlButton = button("ctrl", label: "Control") { [weak self] in self?.target?.keyBarToggleControl() }
-        controlButton.configurationUpdateHandler = { button in
-            var config = button.configuration
-            config?.baseBackgroundColor = button.isSelected ? .tintColor : nil
-            config?.baseForegroundColor = button.isSelected ? .white : nil
-            button.configuration = config
-        }
+        controlButton = latch(button("ctrl", label: "Control") { [weak self] in self?.target?.keyBarToggleControl() })
         stack.addArrangedSubview(controlButton)
-        stack.addArrangedSubview(button("^C", label: "Control C") { [weak self] in
-            self?.target?.keyBarPressed(.letter("c"), modifiers: .control)
-        })
+        // The keyboard's own symbol: the word doesn't fit in a key this narrow.
+        shiftButton = latch(button("", symbol: "shift", label: "Shift") { [weak self] in self?.target?.keyBarToggleShift() })
+        stack.addArrangedSubview(shiftButton)
+        stack.addArrangedSubview(button("^C", label: "Control C") { [weak self] in self?.target?.keyBarInterrupt() })
         for (symbol, key, label) in [
             ("arrow.left", TerminalKey.left, "Left"), ("arrow.down", .down, "Down"),
             ("arrow.up", .up, "Up"), ("arrow.right", .right, "Right"),
