@@ -135,8 +135,8 @@ ghostty:
     set -euo pipefail
     git submodule update --init --depth 1 vendor/ghostty
     cd vendor/ghostty
-    # Each Ghostty commit needs one Zig version; this pin builds with 0.16.0.
-    pixi exec -c conda-forge --spec 'zig==0.16.0' -- \
+    # Each Ghostty commit needs one Zig version; this pin builds with 0.17.0.
+    pixi exec -c conda-forge --spec 'zig==0.17.0' -- \
         zig build -Demit-lib-vt -Demit-xcframework -Doptimize=ReleaseFast --prefix ../../.build/ghostty-vt
     cd ../..
     rm -rf HerdrKit/Frameworks/ghostty-vt.xcframework
