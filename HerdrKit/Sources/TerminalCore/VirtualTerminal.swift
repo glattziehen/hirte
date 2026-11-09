@@ -218,10 +218,10 @@ public final class VirtualTerminal {
     public func scroll(by lines: Int?) {
         var behavior = GhosttyTerminalScrollViewport()
         if let lines {
-            behavior.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA
+            behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA
             behavior.value.delta = lines
         } else {
-            behavior.tag = GHOSTTY_SCROLL_VIEWPORT_BOTTOM
+            behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_BOTTOM
         }
         ghostty_terminal_scroll_viewport(terminal, behavior)
     }
@@ -299,9 +299,9 @@ public final class VirtualTerminal {
         if cursorState.visible && cursorState.viewport_has_value {
             let shape: ScreenCursor.Shape =
                 switch cursorState.visual_style {
-                case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR: .bar
-                case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE: .underline
-                case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW: .hollowBlock
+                case GHOSTTY_CURSOR_STYLE_BAR: .bar
+                case GHOSTTY_CURSOR_STYLE_UNDERLINE: .underline
+                case GHOSTTY_CURSOR_STYLE_BLOCK_HOLLOW: .hollowBlock
                 default: .block
                 }
             cursor = ScreenCursor(
@@ -335,8 +335,9 @@ public final class VirtualTerminal {
         if length > 0 {
             if codepoints.count < length { codepoints = [UInt32](repeating: 0, count: Int(length)) }
             codepoints.withUnsafeMutableBufferPointer { buffer in
+                var graphemes = GhosttyCodepointBuffer(ptr: buffer.baseAddress, cap: buffer.count, len: 0)
                 _ = ghostty_render_state_row_cells_get(
-                    rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, buffer.baseAddress)
+                    rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, &graphemes)
             }
             var scalars = String.UnicodeScalarView()
             for value in codepoints.prefix(Int(length)) {
@@ -356,20 +357,22 @@ public final class VirtualTerminal {
         }
         if hasStyling {
             var raw = GhosttyStyle()
-            raw.size = MemoryLayout<GhosttyStyle>.size
             _ = ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE, &raw)
             if ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR, &color)
                 == GHOSTTY_SUCCESS
             {
                 style.foreground = RGB(color)
             }
-            style.bold = raw.bold
-            style.italic = raw.italic
-            style.faint = raw.faint
-            style.underline = raw.underline != 0
-            style.strikethrough = raw.strikethrough
-            style.inverse = raw.inverse
-            style.invisible = raw.invisible
+            // GhosttyStyleFlags: one bit per attribute (GHOSTTY_STYLE_FLAG_*, macros Swift can't
+            // import), the underline style in bits 8 to 10.
+            let flags = raw.flags
+            style.bold = flags & (1 << 0) != 0
+            style.italic = flags & (1 << 1) != 0
+            style.faint = flags & (1 << 2) != 0
+            style.inverse = flags & (1 << 4) != 0
+            style.invisible = flags & (1 << 5) != 0
+            style.strikethrough = flags & (1 << 6) != 0
+            style.underline = flags & (0x7 << 8) != 0
         }
         var hyperlink = false
         _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &hyperlink)
@@ -436,7 +439,7 @@ public final class VirtualTerminal {
     }
 
     private func prepareMouse() {
-        ghostty_mouse_encoder_setopt_from_terminal(mouseEncoder, terminal)
+        ghostty_mouse_encoder_set_from_terminal(mouseEncoder, terminal)
         // Workaround: the first paint of herdr-core 0.1.18 (Ghostty's formatter) replays mode bits
         // in numeric order, so a program that turned on 1015 then 1006 (btop) ends up in urxvt
         // format here, and its SGR parser ignores our clicks. Like xterm, let SGR win whenever
@@ -447,14 +450,14 @@ public final class VirtualTerminal {
         } else if isPrivateModeEnabled(1006) {
             format = GHOSTTY_MOUSE_FORMAT_SGR
         }
-        if var format { ghostty_mouse_encoder_setopt(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_FORMAT, &format) }
+        if var format { ghostty_mouse_encoder_set(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_FORMAT, &format) }
         var size = GhosttyMouseEncoderSize()
         size.size = MemoryLayout<GhosttyMouseEncoderSize>.size
         size.screen_width = UInt32(cols) * mouseCell.width
         size.screen_height = UInt32(rows) * mouseCell.height
         size.cell_width = mouseCell.width
         size.cell_height = mouseCell.height
-        ghostty_mouse_encoder_setopt(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &size)
+        ghostty_mouse_encoder_set(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &size)
     }
 
     private func mousePosition(column: Int, row: Int) -> GhosttyMousePosition {
@@ -517,7 +520,6 @@ public final class VirtualTerminal {
     public func select(from start: (x: Int, y: Int), to end: (x: Int, y: Int)) {
         guard let from = gridRef(start), let to = gridRef(end) else { return }
         var selection = GhosttySelection()
-        selection.size = MemoryLayout<GhosttySelection>.size
         selection.start = from
         selection.end = to
         selection.rectangle = false
@@ -531,7 +533,6 @@ public final class VirtualTerminal {
         options.size = MemoryLayout<GhosttyTerminalSelectWordOptions>.size
         options.ref = ref
         var selection = GhosttySelection()
-        selection.size = MemoryLayout<GhosttySelection>.size
         if ghostty_terminal_select_word(terminal, &options, &selection) == GHOSTTY_SUCCESS {
             _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection)
         }
@@ -543,16 +544,24 @@ public final class VirtualTerminal {
 
     /// The selected text as Ghostty copies it: soft wraps joined, trailing spaces trimmed.
     public func selectedText() -> String? {
-        var options = GhosttyTerminalSelectionFormatOptions()
-        options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-        options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
-        options.unwrap = true
-        options.trim = true
-        options.selection = nil
+        var selection = GhosttySelection()
+        guard ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_SELECTION, &selection) == GHOSTTY_SUCCESS else {
+            return nil
+        }
+        var formatter: GhosttyFormatter?
+        guard ghostty_formatter_terminal_new(nil, &formatter, terminal) == GHOSTTY_SUCCESS, let formatter else {
+            return nil
+        }
+        defer { ghostty_formatter_free(formatter) }
+        var emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
+        var on = true
+        _ = ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_EMIT, &emit)
+        _ = ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_UNWRAP, &on)
+        _ = ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_TRIM, &on)
+        _ = ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_SELECTION, &selection)
         var pointer: UnsafeMutablePointer<UInt8>?
         var length = 0
-        guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &pointer, &length) == GHOSTTY_SUCCESS,
-              let pointer
+        guard ghostty_formatter_format_alloc(formatter, nil, &pointer, &length) == GHOSTTY_SUCCESS, let pointer
         else { return nil }
         defer { ghostty_free(nil, pointer, length) }
         return String(decoding: UnsafeBufferPointer(start: pointer, count: length), as: UTF8.self)
@@ -564,7 +573,6 @@ public final class VirtualTerminal {
         position.value.coordinate = GhosttyPointCoordinate(
             x: UInt16(clamping: min(max(point.x, 0), cols - 1)), y: UInt32(clamping: min(max(point.y, 0), rows - 1)))
         var ref = GhosttyGridRef()
-        ref.size = MemoryLayout<GhosttyGridRef>.size
         guard ghostty_terminal_grid_ref(terminal, position, &ref) == GHOSTTY_SUCCESS else { return nil }
         return ref
     }
@@ -574,16 +582,14 @@ public final class VirtualTerminal {
     /// Encodes a key press as the running program expects it (cursor/keypad
     /// application modes, Kitty keyboard protocol, ... are taken from the terminal).
     public func encode(_ key: TerminalKey, modifiers: KeyModifiers = [], text: String? = nil) -> Data {
-        ghostty_key_encoder_setopt_from_terminal(keyEncoder, terminal)
+        ghostty_key_encoder_set_from_terminal(keyEncoder, terminal)
         ghostty_key_event_set_action(keyEvent, GHOSTTY_KEY_ACTION_PRESS)
         ghostty_key_event_set_key(keyEvent, key.ghostty)
         ghostty_key_event_set_mods(keyEvent, modifiers.rawValue)
         ghostty_key_event_set_unshifted_codepoint(keyEvent, key.unshiftedCodepoint ?? 0)
         let utf8 = Array((text ?? "").utf8)
-        utf8.withUnsafeBufferPointer { buffer in
-            buffer.withMemoryRebound(to: CChar.self) {
-                ghostty_key_event_set_utf8(keyEvent, $0.baseAddress, $0.count)
-            }
+        utf8.withUnsafeBufferPointer {
+            _ = ghostty_key_event_set_utf8(keyEvent, GhosttyString(ptr: $0.baseAddress, len: $0.count))
         }
         var output = [CChar](repeating: 0, count: 128)
         var written = 0
@@ -634,16 +640,16 @@ public enum TerminalKey: Hashable, Sendable {
         case .pageUp: GHOSTTY_KEY_PAGE_UP
         case .pageDown: GHOSTTY_KEY_PAGE_DOWN
         case .function(let n) where (1...12).contains(n):
-            GhosttyKey(rawValue: GHOSTTY_KEY_F1.rawValue + Int32(n - 1))
+            GhosttyKey(rawValue: GHOSTTY_KEY_F1.rawValue + UInt32(n - 1))
         case .letter(let c):
             if let ascii = c.lowercased().unicodeScalars.first?.value, (97...122).contains(ascii) {
-                GhosttyKey(rawValue: GHOSTTY_KEY_A.rawValue + Int32(ascii) - 97)
+                GhosttyKey(rawValue: GHOSTTY_KEY_A.rawValue + ascii - 97)
             } else {
                 GHOSTTY_KEY_UNIDENTIFIED
             }
         case .digit(let d) where (0...9).contains(d):
             // DIGIT_0 sits right before DIGIT_1.
-            GhosttyKey(rawValue: GHOSTTY_KEY_DIGIT_1.rawValue + Int32(d) - 1)
+            GhosttyKey(rawValue: GHOSTTY_KEY_DIGIT_1.rawValue + UInt32(d) - 1)
         default: GHOSTTY_KEY_UNIDENTIFIED
         }
     }
