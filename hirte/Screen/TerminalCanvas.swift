@@ -65,6 +65,25 @@ final class TerminalCanvasView: UIView, UITextInput {
     /// A tiny tap per arrow key, and a firmer one when the direction or speed changes.
     private let keyTap = UIImpactFeedbackGenerator(style: .light)
     private let stageTap = UIImpactFeedbackGenerator(style: .medium)
+    /// How long a hold must stay still, once it has begun, to select instead of sending arrow keys.
+    private static let selectionHoldDelay: TimeInterval = 0.5
+    /// Runs out when a hold has stayed still for `selectionHoldDelay`.
+    private var selectionHoldTimer: Timer?
+    /// Where a selecting hold landed, until a drag makes it the selection's start: Ghostty then
+    /// keeps that on its text as the screen scrolls, which a viewport cell wouldn't.
+    private var selectionAnchor: (x: Int, y: Int)?
+    /// Runs while a hold selects, to scroll while a selection drag is held against an edge.
+    private var selectionScroller: CADisplayLink?
+    /// Where the finger is during a hold: the gesture reports only when it moves.
+    private var selectionDragPoint: CGPoint = .zero
+    private var selectionPressY: CGFloat = 0
+    /// Whether the finger has moved up or down since the press. Until then it's only selecting
+    /// a word that happens to be near an edge, or dragging along its line, and nothing scrolls.
+    private var selectionScrollArmed = false
+    /// The part of a line not scrolled yet.
+    private var selectionScrollRemainder: CGFloat = 0
+    /// The cell last reported while a selecting hold's drag goes to the program (`programSelects`).
+    private var programDragCell: (x: Int, y: Int)?
     /// The link a tap landed on, for the edit menu.
     private var menuLink: URL?
     private lazy var editMenu = UIEditMenuInteraction(delegate: self)
@@ -537,15 +556,26 @@ final class TerminalCanvasView: UIView, UITextInput {
         }
     }
 
-    /// Hold, then drag for arrow keys (see `ArrowStick`); hold and let go without dragging for Paste.
+    /// Hold, then drag for arrow keys (see `ArrowStick`); hold and let go without dragging for
+    /// Paste. Stay still for longer and the hold selects a word instead: keep dragging to extend,
+    /// against the top or bottom edge to scroll on; let go for Copy.
     @objc private func longPressed(_ press: UILongPressGestureRecognizer) {
-        guard model != nil else { return }
+        guard let model else { return }
         let point = press.location(in: self)
+        if programDragCell != nil { return forwardDrag(press.state, at: point, to: model) }
+        if selectionScroller != nil { return dragSelection(press.state, at: point, with: model) }
         switch press.state {
         case .began:
+            model.clearSelection()
             beginStick(at: point)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selectionDragPoint = point
+            selectionHoldTimer = Timer.scheduledTimer(withTimeInterval: Self.selectionHoldDelay, repeats: false) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.beginSelection() }
+            }
         case .changed:
+            selectionDragPoint = point
             moveStick(to: point)
         case .ended:
             let sent = stickSent
@@ -557,6 +587,137 @@ final class TerminalCanvasView: UIView, UITextInput {
         default:
             endStick()
         }
+    }
+
+    /// The finger stayed put: this hold selects from here on, unless an arrow key already went out.
+    private func beginSelection() {
+        guard let model, stickSent == 0 else { return }
+        endStick()
+        stageTap.impactOccurred(intensity: 0.8)
+        let point = selectionDragPoint
+        if model.programSelects {
+            forwardDrag(.began, at: point, to: model)
+        } else {
+            let at = cell(at: point)
+            selectionAnchor = at
+            model.selectWord(at: at)
+            startSelectionScroller(at: point)
+        }
+    }
+
+    /// The rest of a hold that selects.
+    private func dragSelection(_ state: UIGestureRecognizer.State, at point: CGPoint, with model: TerminalScreenModel) {
+        switch state {
+        case .changed:
+            selectionDragPoint = point
+            if abs(point.y - selectionPressY) >= 16 { selectionScrollArmed = true }
+            extendSelection(to: point)
+        case .ended:
+            stopSelectionScroller()
+            selectionAnchor = nil
+            menuLink = nil
+            // Paste too: a hold on nothing selectable still offers it.
+            if model.hasSelection || UIPasteboard.general.hasStrings {
+                editMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
+            }
+        default:
+            stopSelectionScroller()
+            selectionAnchor = nil
+        }
+    }
+
+    /// A selecting hold for a program that selects text itself: it gets the drag as mouse events,
+    /// scrolls at the edges and copies on release, so there's no selection or menu of ours.
+    private func forwardDrag(_ state: UIGestureRecognizer.State, at point: CGPoint, to model: TerminalScreenModel) {
+        switch state {
+        case .began:
+            let at = cell(at: point)
+            programDragCell = at
+            selectionPressY = point.y
+            selectionScrollArmed = false
+            model.clearSelection()
+            model.programDrag(.press, at: at)
+        case .changed:
+            if abs(point.y - selectionPressY) >= 16 { selectionScrollArmed = true }
+            var at = cell(at: point)
+            // Claude Code scrolls up only with the pointer on the very top row (2.1.319: not on
+            // the next one), which a fingertip can hardly hit: the row below it counts too.
+            if selectionScrollArmed, at.y <= 1 { at.y = 0 }
+            guard let last = programDragCell, at != last else { return }
+            programDragCell = at
+            model.programDrag(.move, at: at)
+        default:
+            // Also when cancelled, or the program would stay in its drag.
+            if let last = programDragCell { model.programDrag(.release, at: last) }
+            programDragCell = nil
+        }
+    }
+
+    /// Moves the selection's end under the finger, after scrolling by `lines`.
+    private func extendSelection(to point: CGPoint, scrolling lines: Int = 0) {
+        guard let model else { return }
+        let at = cell(at: point)
+        if let anchor = selectionAnchor {
+            // Still the word from the press, until the finger leaves its cell or the screen moves.
+            guard at != anchor || lines != 0 else { return }
+            selectionAnchor = nil
+            model.select(from: anchor, to: at)
+        }
+        model.extendSelection(to: at, scrolling: lines)
+    }
+
+    private func startSelectionScroller(at point: CGPoint) {
+        selectionDragPoint = point
+        selectionPressY = point.y
+        selectionScrollArmed = false
+        selectionScrollRemainder = 0
+        let scroller = CADisplayLink(target: self, selector: #selector(selectionScrollerFired(_:)))
+        scroller.add(to: .main, forMode: .common)
+        selectionScroller = scroller
+    }
+
+    private func stopSelectionScroller() {
+        selectionScroller?.invalidate()
+        selectionScroller = nil
+    }
+
+    /// Fires on every frame of a selecting hold: the finger may be holding still at the edge,
+    /// when the gesture reports nothing.
+    @objc private func selectionScrollerFired(_ scroller: CADisplayLink) {
+        guard window != nil else { return stopSelectionScroller() }
+        let speed = selectionScrollSpeed(at: selectionDragPoint.y)
+        guard speed != 0 else {
+            selectionScrollRemainder = 0
+            return
+        }
+        selectionScrollRemainder += speed * CGFloat(scroller.targetTimestamp - scroller.timestamp)
+        let lines = Int(selectionScrollRemainder)
+        guard lines != 0 else { return }
+        selectionScrollRemainder -= CGFloat(lines)
+        extendSelection(to: selectionDragPoint, scrolling: lines)
+    }
+
+    /// How fast a selection drag at this height scrolls, in lines per second (negative is up):
+    /// not at all away from the top and bottom edges, then faster the closer it gets. Also not at
+    /// all with no history that way, as on the alternate screen, which has none.
+    private func selectionScrollSpeed(at y: CGFloat) -> CGFloat {
+        guard selectionScrollArmed, let bar = screen.scrollbar else { return 0 }
+        let g = geometry()
+        let usable = usableRect
+        let top = max(g.origin.y, usable.minY)
+        let bottom = min(g.origin.y + CGFloat(screen.rows) * g.cellHeight, usable.maxY)
+        // A fingertip's worth, but never so much of a short screen that nothing is left to drag in.
+        let zone = min(max(g.cellHeight * 2, 44), (bottom - top) / 4)
+        guard zone > 0 else { return 0 }
+        func speed(depth: CGFloat) -> CGFloat {
+            let depth = min(depth, 1)
+            return 4 + 36 * depth * depth
+        }
+        let intoTop = (top + zone - y) / zone
+        let intoBottom = (y - (bottom - zone)) / zone
+        if intoTop > 0, bar.offset > 0 { return -speed(depth: intoTop) }
+        if intoBottom > 0, !bar.atBottom { return speed(depth: intoBottom) }
+        return 0
     }
 
     /// Starts a hold at a point: from a finger on the screen, or the space bar's trackpad.
@@ -635,6 +796,8 @@ final class TerminalCanvasView: UIView, UITextInput {
     private func endStick() {
         stickTimer?.invalidate()
         stickTimer = nil
+        selectionHoldTimer?.invalidate()
+        selectionHoldTimer = nil
         stickOrigin = nil
         stickKey = nil
         stickRepeating = false
@@ -875,8 +1038,14 @@ final class TerminalCanvasView: UIView, UITextInput {
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
         case #selector(paste(_:)): UIPasteboard.general.hasStrings
+        case #selector(copy(_:)): model?.hasSelection ?? false
         default: super.canPerformAction(action, withSender: sender)
         }
+    }
+
+    override func copy(_ sender: Any?) {
+        model?.copySelection()
+        model?.clearSelection()
     }
 
     override func paste(_ sender: Any?) {
@@ -916,12 +1085,20 @@ extension TerminalCanvasView: UIEditMenuInteractionDelegate {
             })
             return UIMenu(title: url.absoluteString, children: actions)
         }
-        guard UIPasteboard.general.hasStrings else { return nil }
-        return UIMenu(children: [
-            UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+        var actions: [UIMenuElement] = []
+        if model?.hasSelection == true {
+            actions.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
+                self?.model?.copySelection()
+                self?.model?.clearSelection()
+            })
+        }
+        if UIPasteboard.general.hasStrings {
+            actions.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+                self?.model?.clearSelection()
                 if let text = UIPasteboard.general.string { self?.model?.paste(text) }
-            },
-        ])
+            })
+        }
+        return actions.isEmpty ? nil : UIMenu(children: actions)
     }
 }
 
