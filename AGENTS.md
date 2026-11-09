@@ -40,9 +40,9 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
   can't read the project format): HerdrKit tests (without `KeyStoreTests`, which need the data
   protection keychain), and a simulator build of the app and its test targets. The app's tests don't
   run in CI: booting a simulator on a fresh runner takes 5-7 minutes. Run them locally, and put
-  logic that needs tests into the package (`Machines`) rather than the app. The package
-  builds are cached per Xcode build and `Package.resolved`; libghostty-vt per Ghostty pin
-  (`.github/actions/setup`). Aim: under 5 minutes.
+  logic that needs tests into the package (`Machines`) rather than the app. Cached:
+  libghostty-vt per Ghostty pin (built with `just` from `pixi global install` on a miss), the
+  app's package builds per Xcode build and `Package.resolved`. Aim: under 5 minutes.
 - **The project file** is `hirte.xcodeproj/project.xcproj` (a JSON-like format, not `project.pbxproj`).
   Per-configuration keys (`KEY[config=Debug]`) only work in the project-level `build-settings`, not in
   a target's. `hirte/` is a synchronized folder: new files there are in the target automatically.
