@@ -80,7 +80,7 @@ struct MachinesView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Add Machine", systemImage: "server.rack") { editing = newHost() }
-                    if !hosts.hasDemo {
+                    if hosts.offersDemo {
                         Button("Add Demo Machine", systemImage: "play.rectangle") { addDemo() }
                     }
                 } label: {

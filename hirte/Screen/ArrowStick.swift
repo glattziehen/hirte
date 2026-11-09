@@ -1,9 +1,9 @@
 import HerdrKit
 import UIKit
 
-/// Arrow keys from a held finger, like a joystick: past a small dead zone around where the hold
-/// began, the direction the finger moved furthest in picks the key, and the distance picks how
-/// fast it repeats.
+/// Arrow keys from the space bar's trackpad, like a joystick: past a small dead zone around where
+/// the hold began, the direction the finger moved furthest in picks the key, and the distance picks
+/// how fast it repeats.
 enum ArrowStick {
     /// How fast the key repeats, slowest first.
     enum Speed: Int, Comparable {
@@ -50,7 +50,7 @@ enum ArrowStick {
     }
 }
 
-/// Shows what the held finger does: four grey arrows, the active one lit. One key is an arrow;
+/// Shows what the trackpad does: four grey arrows, the active one lit. One key is an arrow;
 /// repeating turns it into three chevrons: one lit (slow) or two (flow), running along with the
 /// keys, or all three (fast).
 final class ArrowPadView: UIView {

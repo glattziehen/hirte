@@ -113,6 +113,8 @@ final class HostStore {
     }
 
     var hasDemo: Bool { hosts.contains(where: \.isDemo) }
+    /// Offered next to "Add Machine" only until there is a machine: then the demo stays in Settings.
+    var offersDemo: Bool { hosts.isEmpty }
 
     /// Adds the demo machine (once) and returns it.
     @discardableResult

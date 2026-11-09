@@ -45,7 +45,7 @@ sim:
     {{xcodebuild}} -configuration Debug -destination "platform=iOS Simulator,name=$sim" build | xcbeautify --quiet
     xcrun simctl boot "$sim" 2>/dev/null || true
     xcrun simctl bootstatus "$sim" -b >/dev/null
-    open -a Simulator
+    open -a "$(xcode-select -p)/../Applications/DeviceHub.app"
     xcrun simctl install "$sim" "{{derived}}/Build/Products/Debug-iphonesimulator/{{scheme}}.app"
     xcrun simctl launch --terminate-running-process "$sim" {{dev_bundle_id}}
 

@@ -18,12 +18,19 @@
   ],
   "files": [
     { "kind": "folder", "path": "hirte", "target-membership": [ "hirte" ] },
+    { "kind": "group", "path": "HirteLiveActivity", "children": [
+      { "path": "HirteLiveActivity.swift", "target-membership": [ { "build-phase": "HirteLiveActivity/compile-sources" } ] },
+      { "path": "Info.plist" },
+      { "path": "AppInfo.plist" },
+    ] },
+    { "kind": "folder", "path": "SharedLiveActivity", "target-membership": [ "hirte", "HirteLiveActivity" ] },
     { "kind": "folder", "path": "hirteTests", "target-membership": [ "hirteTests" ] },
     { "kind": "folder", "path": "hirteUITests", "target-membership": [ "hirteUITests" ] },
     {
       "kind": "group",
       "name": "Products",
       "children": [
+        { "path": "<PRODUCTS>/HirteLiveActivity.appex", "id": "A12345678901234567890002", "type": "wrapper.app-extension", "index": false, "target-membership": [ { "build-phase": "hirte/copy/Embed App Extensions", "header-preservation": "remove-on-copy" } ] },
         { "path": "<PRODUCTS>/hirte.app", "id": "E9102D2A3097E5CC000033A3", "type": "wrapper.application", "index": false },
         { "path": "<PRODUCTS>/hirteTests.xctest", "id": "E9102D373097E5CD000033A3", "type": "wrapper.cfbundle", "index": false },
         { "path": "<PRODUCTS>/hirteUITests.xctest", "id": "E9102D413097E5CD000033A3", "type": "wrapper.cfbundle", "index": false },
@@ -32,14 +39,42 @@
   ],
   "targets": [
     {
+      "name": "HirteLiveActivity",
+      "id": "A12345678901234567890001",
+      "product": "Products/HirteLiveActivity.appex",
+      "product-type": "app-extension",
+      "build-phases": [ "compile-sources", "frameworks", "resources" ],
+      "build-settings": {
+        "APPLICATION_EXTENSION_API_ONLY": "YES",
+        "CODE_SIGN_STYLE": "Automatic",
+        "CURRENT_PROJECT_VERSION": "10",
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_FILE": "HirteLiveActivity/Info.plist",
+        "INFOPLIST_KEY_CFBundleDisplayName": "Hirte Activity",
+        "LD_RUNPATH_SEARCH_PATHS": [ "$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks" ],
+        "MARKETING_VERSION": "0.1.0",
+        "PRODUCT_BUNDLE_IDENTIFIER": "$(HIRTE_BUNDLE_ID_PREFIX).hirte$(HIRTE_BUNDLE_ID_SUFFIX).liveactivity",
+        "PRODUCT_NAME": "$(TARGET_NAME)",
+        "SKIP_INSTALL": "YES",
+        "SWIFT_VERSION": "5.0",
+        "TARGETED_DEVICE_FAMILY": "1,2",
+      },
+    },
+    {
       "name": "hirte",
       "id": "E9102D293097E5CC000033A3",
       "product": "Products/hirte.app",
       "product-type": "application",
+      "dependencies": [ "HirteLiveActivity" ],
       "build-phases": [
         "compile-sources",
         "frameworks",
         "resources",
+        {
+          "kind": "copy",
+          "name": "Embed App Extensions",
+          "bundle-base-path": "plugins-directory",
+        },
       ],
       "package-product-members": [
         {
@@ -56,6 +91,8 @@
         "ENABLE_PREVIEWS": "YES",
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_KEY_CFBundleDisplayName": "Hirte$(HIRTE_NAME_SUFFIX)",
+        "INFOPLIST_FILE": "HirteLiveActivity/AppInfo.plist",
+        "INFOPLIST_KEY_NSSupportsLiveActivities": "YES",
         "INFOPLIST_KEY_ITSAppUsesNonExemptEncryption": "NO",
         "INFOPLIST_KEY_NSFaceIDUsageDescription": "Face ID unlocks your SSH key when you connect to a machine.",
         "INFOPLIST_KEY_NSLocalNetworkUsageDescription": "Hirte connects over SSH to machines on your local network.",

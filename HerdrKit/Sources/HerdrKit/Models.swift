@@ -60,6 +60,9 @@ public struct Terminal: Codable, Hashable, Sendable, Identifiable {
     /// When the status word last changed (ms since the epoch, the machine's clock); nil if it
     /// never said.
     public internal(set) var statusMs: UInt64?
+    /// Template runs: whether the first message went in. Nil when it wasn't a template run or
+    /// the core is older than 0.1.18, which doesn't say.
+    public internal(set) var firstMessage: FirstMessage?
 
     public var id: String { address }
 
@@ -78,6 +81,7 @@ public struct Terminal: Codable, Hashable, Sendable, Identifiable {
         case createdMs = "created_ms"
         case exitCode = "exit_code"
         case statusMs = "status_ms"
+        case firstMessage = "first_message"
     }
 
     public init(from decoder: Decoder) throws {
@@ -101,6 +105,25 @@ public struct Terminal: Codable, Hashable, Sendable, Identifiable {
         parent = try c.decodeIfPresent(String.self, forKey: .parent)
         turn = try c.decodeIfPresent(UInt64.self, forKey: .turn)
         statusMs = try c.decodeIfPresent(UInt64.self, forKey: .statusMs)
+        firstMessage = try c.decodeIfPresent(FirstMessage.self, forKey: .firstMessage)
+    }
+}
+
+/// herdr-core's `FirstMessage`: a template's body plus task, sent once the agent is ready.
+public struct FirstMessage: Codable, Hashable, Sendable {
+    public let sent: Bool
+    /// Why it was not sent.
+    public let reason: String?
+    /// Whether the agent started working on it; false after `sent` may just mean it's queued.
+    public let started: Bool?
+    /// The agent's turn when it went in.
+    public let turn: UInt64?
+
+    public init(sent: Bool, reason: String? = nil, started: Bool? = nil, turn: UInt64? = nil) {
+        self.sent = sent
+        self.reason = reason
+        self.started = started
+        self.turn = turn
     }
 }
 

@@ -45,6 +45,9 @@ App tests: `xcodebuild … -only-testing:hirteTests test` (unit) or `-only-testi
   `hirte/Settings/themes.json` (`just themes`), the app icons (`just icon` from `assets/logo.svg`).
 - **Bundled fonts** live in `hirte/Fonts` and are registered at runtime (`Fonts.mono`); each needs a
   license entry.
+- **Sidebar rows** of both views share `SidebarRow` and the roles in `Terminals/SidebarStyle.swift`
+  (text, fills, measures, the needs-you color): add to those rather than setting values in a row.
+  `Color.accentColor` follows the list's tint, which is the selection's fill; use `Color.appControl`.
 - **Terminal colors** come from the selected theme (`TerminalTheme`), set as libghostty-vt's default
   colors and palette. The terminal screen's title bar, keyboard and overlays follow the theme's
   brightness, not the app's appearance; the app appearance is set on the window

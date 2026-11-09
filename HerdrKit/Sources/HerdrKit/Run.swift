@@ -43,6 +43,80 @@ public struct TemplateInfo: Decodable, Hashable, Sendable, Identifiable {
     /// Set when the file can't be used.
     public let error: String?
     public var id: String { name }
+
+    public init(name: String, description: String, command: String, error: String? = nil) {
+        self.name = name
+        self.description = description
+        self.command = command
+        self.error = error
+    }
+}
+
+/// Start values for worker-adapter templates. A compatibility convention, not herdr-core
+/// protocol: a template whose command runs `agent-herdr-worker` refuses to start unless its
+/// terminal carries the labels `worker.harness`, `worker.model` and `worker.effort`.
+/// herdr-core 0.1.18's `templates.list` gives only a template's name, description and command,
+/// so such a template is recognized by its command, and these values are what the person typed:
+/// never guessed, remembered or copied from another terminal. The adapter on the machine checks
+/// them again and stays authoritative (allowed runtimes, roles, models).
+/// Revisit when `templates.list` describes a template's parameters: show those instead.
+public struct WorkerStartOptions: Equatable, Sendable {
+    public static let harnessLabel = "worker.harness"
+    public static let modelLabel = "worker.model"
+    public static let effortLabel = "worker.effort"
+    /// The reasoning levels the adapter accepts.
+    public static let efforts = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra", "inherit"]
+
+    public enum Problem: Equatable, Sendable {
+        /// Required (or partly filled), but not all three are set.
+        case incomplete
+        case invalidRuntime
+        case invalidModel
+        case invalidReasoning
+    }
+
+    public var runtime = ""
+    public var model = ""
+    public var reasoning: String?
+
+    public init(runtime: String = "", model: String = "", reasoning: String? = nil) {
+        self.runtime = runtime
+        self.model = model
+        self.reasoning = reasoning
+    }
+
+    /// Whether starting this template needs the three values.
+    public static func isRequired(by template: TemplateInfo) -> Bool {
+        template.command.contains("agent-herdr-worker")
+    }
+
+    private var trimmedRuntime: String { runtime.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmedModel: String { model.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isBlank: Bool { trimmedRuntime.isEmpty && trimmedModel.isEmpty && reasoning == nil }
+
+    /// Nil when it may start. Blank is fine unless required; anything typed must be complete.
+    public func problem(required: Bool) -> Problem? {
+        if isBlank && !required { return nil }
+        guard !trimmedRuntime.isEmpty, !trimmedModel.isEmpty, let reasoning else { return .incomplete }
+        // The adapter's character rules, so a typo is caught here instead of in its terminal.
+        guard Self.matches(trimmedRuntime, extra: "_-") else { return .invalidRuntime }
+        guard Self.matches(trimmedModel, extra: "._:+-") else { return .invalidModel }
+        guard Self.efforts.contains(reasoning) else { return .invalidReasoning }
+        return nil
+    }
+
+    /// The labels to start with; empty when left blank.
+    public var labels: [String: String] {
+        guard !isBlank else { return [:] }
+        return [Self.harnessLabel: trimmedRuntime, Self.modelLabel: trimmedModel, Self.effortLabel: reasoning ?? ""]
+    }
+
+    private static func matches(_ value: String, extra: String) -> Bool {
+        value.unicodeScalars.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0)
+                || extra.unicodeScalars.contains($0)
+        }
+    }
 }
 
 extension HerdrCore {
@@ -70,7 +144,9 @@ extension HerdrCore {
 }
 
 extension HerdrClient {
-    /// Starts a terminal; returns once it runs (for a template: once its first message is sent).
+    /// Starts a terminal; returns once it runs (for a template: once its first message went in
+    /// or didn't, see `Terminal.firstMessage`). Cancelling the calling task doesn't end this
+    /// wait: the reply (or the connection closing) does. There is no cancel request to send.
     public func run(_ request: RunRequest) async throws -> Terminal {
         try await call("terminal.run", request)
     }

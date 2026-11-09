@@ -27,17 +27,17 @@ struct SettingsView: View {
             }
 
             Section {
-                TerminalPreview(
+                ThemeTerminalPreview(
                     size: fontSize, family: fontFamily,
                     theme: TerminalTheme.current(colorScheme, light: lightTheme, dark: darkTheme))
                     .listRowInsets(EdgeInsets())
                 NavigationLink {
-                    ThemePicker(title: "Light Theme", themes: TerminalTheme.lightThemes, selection: $lightTheme)
+                    ThemeGalleryView(dark: false)
                 } label: {
                     LabeledContent("Light Theme", value: TerminalTheme.find(lightTheme, dark: false).name)
                 }
                 NavigationLink {
-                    ThemePicker(title: "Dark Theme", themes: TerminalTheme.darkThemes, selection: $darkTheme)
+                    ThemeGalleryView(dark: true)
                 } label: {
                     LabeledContent("Dark Theme", value: TerminalTheme.find(darkTheme, dark: true).name)
                 }
@@ -59,6 +59,12 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("A machine built into Hirte, with agents and terminals to try everything without a server.")
+            }
+
+            LiveActivitySettingsView()
+
+            Section("Agents") {
+                NavigationLink("Agent Overview") { AgentOverviewSettingsView() }
             }
 
             Section("About") {
@@ -91,92 +97,6 @@ struct SettingsView: View {
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
         return "\(short) (\(build))"
-    }
-}
-
-/// A few lines in a theme and font, so changes show at once.
-private struct TerminalPreview: View {
-    let size: Double
-    let family: TerminalFont
-    let theme: TerminalTheme
-
-    var body: some View {
-        let fonts = Fonts(size: size, family: family)
-        VStack(alignment: .leading, spacing: 0) {
-            Self.line([("~/projects/shop-api ", theme.ansiColor(4)), ("❯ ", theme.ansiColor(5)), ("git log --oneline", nil)])
-            Self.line([("a41c9e2 ", theme.ansiColor(3)), ("Add order totals endpoint", nil)])
-            Self.line([("7d03b1f ", theme.ansiColor(3)), ("Cache product images", nil)])
-            Self.line([("✓ ", theme.ansiColor(2)), ("48 passed ", nil), ("✗ ", theme.ansiColor(1)), ("0 failed", nil)])
-        }
-        .font(Font(fonts.regular))
-        .foregroundStyle(theme.color(theme.foreground))
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(theme.color(theme.background))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preview of \(theme.name) in \(family.title)")
-    }
-
-    /// One line from colored pieces (nil: the theme's foreground).
-    static func line(_ pieces: [(String, Color?)]) -> Text {
-        var text = AttributedString()
-        for (string, color) in pieces {
-            var piece = AttributedString(string)
-            if let color { piece.foregroundColor = color }
-            text += piece
-        }
-        return Text(text)
-    }
-}
-
-/// Every light (or dark) theme, each drawn in its own colors.
-private struct ThemePicker: View {
-    let title: String
-    let themes: [TerminalTheme]
-    @Binding var selection: String
-
-    var body: some View {
-        List(themes) { theme in
-            Button {
-                selection = theme.id
-            } label: {
-                HStack(spacing: 12) {
-                    ThemeSwatch(theme: theme)
-                    Text(theme.name).foregroundStyle(.primary)
-                    Spacer()
-                    if theme.id == selection {
-                        Image(systemName: "checkmark").foregroundStyle(.tint).fontWeight(.semibold)
-                    }
-                }
-            }
-            .accessibilityAddTraits(theme.id == selection ? .isSelected : [])
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-/// A theme at a glance: its background with a prompt and the six main colors.
-private struct ThemeSwatch: View {
-    let theme: TerminalTheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TerminalPreview.line([("❯ ", theme.ansiColor(5)), ("ls", nil)])
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(theme.color(theme.foreground))
-            HStack(spacing: 3) {
-                ForEach(1..<7) { index in
-                    Circle().fill(theme.ansiColor(index)).frame(width: 7, height: 7)
-                }
-            }
-        }
-        .padding(8)
-        .frame(width: 84, alignment: .leading)
-        .background(theme.color(theme.background), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.quaternary))
-        .accessibilityHidden(true)
     }
 }
 

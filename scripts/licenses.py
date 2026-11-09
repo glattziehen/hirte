@@ -66,6 +66,23 @@ licenses = [
      "text": read(EXTRA / "jetbrains-mono.txt")},
     {"name": "Comic Mono", "url": "https://github.com/dtinth/comic-mono-font", "license": "MIT",
      "text": read(EXTRA / "comic-mono.txt")},
+    {"name": "Symbols Nerd Font Mono (Nerd Fonts 3.4.0)",
+     "url": "https://github.com/ryanoasis/nerd-fonts/tree/v3.4.0",
+     "license": "MIT + component licenses (see notices)",
+     "text": read(
+         EXTRA / "nerd-fonts/README.md", ROOT / "hirte/Fonts/SymbolsNerdFont-LICENSE.txt",
+         EXTRA / "nerd-fonts/LICENSE", EXTRA / "nerd-fonts/license-audit.md",
+         EXTRA / "nerd-fonts/src/glyphs/codicons/LICENSE.txt",
+         EXTRA / "nerd-fonts/src/glyphs/font-awesome/LICENSE.txt",
+         EXTRA / "nerd-fonts/src/glyphs/materialdesign/LICENSE",
+         EXTRA / "nerd-fonts/src/glyphs/octicons/LICENSE",
+         EXTRA / "nerd-fonts/src/glyphs/pomicons/LICENSE",
+         EXTRA / "nerd-fonts/src/glyphs/powerline-extra/LICENSE",
+         EXTRA / "nerd-fonts/src/glyphs/powerline-symbols/LICENSE.txt",
+         EXTRA / "nerd-fonts/src/glyphs/weather-icons/OFL.txt")},
+    {"name": "Agent icons (herdr / LobeHub)", "url": "https://github.com/lobehub/lobe-icons",
+     "license": "MIT (trademark rights excluded)",
+     "text": read(EXTRA / "agent-icons/ATTRIBUTION.md", EXTRA / "agent-icons/LICENSE-LobeHub.txt")},
     {"name": "Terminal color themes (iTerm2-Color-Schemes)", "url": "https://github.com/mbadolato/iTerm2-Color-Schemes",
      "license": "MIT", "text": "Catppuccin, Dracula, Tokyo Night, Gruvbox, Nord, One, Rosé Pine, Solarized, GitHub, "
      "Kanagawa and Everforest colors, as collected by iTerm2-Color-Schemes and shipped with Ghostty. "
