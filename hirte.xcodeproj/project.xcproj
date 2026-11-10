@@ -56,7 +56,7 @@
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
         "CODE_SIGN_ENTITLEMENTS": "hirte/hirte.entitlements",
         "CODE_SIGN_STYLE": "Automatic",
-        "CURRENT_PROJECT_VERSION": "11",
+        "CURRENT_PROJECT_VERSION": "12",
         "ENABLE_PREVIEWS": "YES",
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_KEY_CFBundleDisplayName": "Hirte$(HIRTE_NAME_SUFFIX)",
@@ -100,7 +100,7 @@
       "build-settings": {
         "BUNDLE_LOADER": "$(TEST_HOST)",
         "CODE_SIGN_STYLE": "Automatic",
-        "CURRENT_PROJECT_VERSION": "11",
+        "CURRENT_PROJECT_VERSION": "12",
         "GENERATE_INFOPLIST_FILE": "YES",
         "MARKETING_VERSION": "0.1.0",
         "PRODUCT_BUNDLE_IDENTIFIER": "$(HIRTE_BUNDLE_ID_PREFIX).hirteTests",
@@ -129,7 +129,7 @@
       ],
       "build-settings": {
         "CODE_SIGN_STYLE": "Automatic",
-        "CURRENT_PROJECT_VERSION": "11",
+        "CURRENT_PROJECT_VERSION": "12",
         "GENERATE_INFOPLIST_FILE": "YES",
         "MARKETING_VERSION": "0.1.0",
         "PRODUCT_BUNDLE_IDENTIFIER": "$(HIRTE_BUNDLE_ID_PREFIX).hirteUITests",
